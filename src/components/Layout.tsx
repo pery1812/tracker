@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { signOut } from '../lib/auth'
 import { HabitsIcon, StatsIcon, TodayIcon, WorkoutsIcon } from './icons'
+import { ImportLocalData } from './ImportLocalData'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Today', Icon: TodayIcon },
@@ -38,10 +40,12 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
+        <SignOutButton className="mt-auto px-3 text-left" />
       </aside>
 
       {/* Page content. Bottom padding leaves room for the tab bar and the iPhone home indicator. */}
       <main className="mx-auto w-full max-w-2xl px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:pt-10 md:pb-10">
+        <ImportLocalData />
         <Outlet />
       </main>
 
@@ -69,6 +73,20 @@ export function Layout() {
         </ul>
       </nav>
     </div>
+  )
+}
+
+export function SignOutButton({ className = '' }: { className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (window.confirm('Sign out on this device?')) void signOut()
+      }}
+      className={`py-2 text-sm font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white ${className}`}
+    >
+      Sign out
+    </button>
   )
 }
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { HabitForm } from '../components/HabitForm'
 import { PlusIcon } from '../components/icons'
-import { PageHeader } from '../components/Layout'
+import { PageHeader, SignOutButton } from '../components/Layout'
 import { useHabits } from '../hooks/useHabits'
 import type { Habit } from '../lib/types'
 
@@ -54,6 +54,11 @@ export function HabitsPage() {
           </li>
         ))}
       </ul>
+
+      {/* The sidebar has this on wider screens; on phones it lives here. */}
+      <div className="mt-10 text-center md:hidden">
+        <SignOutButton />
+      </div>
 
       {editing !== undefined && (
         <HabitForm

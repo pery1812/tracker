@@ -33,11 +33,16 @@ export function HabitForm({ habit, onSave, onDelete, onClose }: Props) {
     e.preventDefault()
     if (!trimmed || saving) return
     setSaving(true)
-    await onSave({
-      name: trimmed,
-      color,
-      frequency: freqType === 'daily' ? { type: 'daily' } : { type: 'weekly', timesPerWeek },
-    })
+    try {
+      await onSave({
+        name: trimmed,
+        color,
+        frequency: freqType === 'daily' ? { type: 'daily' } : { type: 'weekly', timesPerWeek },
+      })
+    } catch (err) {
+      setSaving(false) // keep the form open so nothing typed is lost; the error banner shows why
+      throw err
+    }
   }
 
   async function handleDelete() {
@@ -47,7 +52,12 @@ export function HabitForm({ habit, onSave, onDelete, onClose }: Props) {
       return
     }
     setSaving(true)
-    await onDelete()
+    try {
+      await onDelete()
+    } catch (err) {
+      setSaving(false)
+      throw err
+    }
   }
 
   const segment = (active: boolean) =>
