@@ -24,3 +24,43 @@ export interface Completion {
 }
 
 export type HabitInput = Pick<Habit, 'name' | 'color' | 'frequency'>
+
+// ---------- workouts ----------
+
+export type SessionKey = 'mon' | 'tue' | 'wed' | 'sat'
+export type Side = 'left' | 'right'
+
+export interface ProgramSettings {
+  /** Monday of program week 1. */
+  startDate: DateKey
+}
+
+export interface WorkoutSession {
+  id: string
+  date: DateKey
+  sessionKey: SessionKey
+  /** Right knee 0–10 during the session (the program's knee rule). */
+  kneePain: number | null
+  kneePainNextMorning: number | null
+  notes: string
+  createdAt: string
+}
+
+export type WorkoutSessionUpdate = Partial<Pick<WorkoutSession, 'kneePain' | 'kneePainNextMorning' | 'notes'>>
+
+/** One set actually done. Only the values the exercise uses are filled in. */
+export interface WorkoutSet {
+  id: string
+  sessionId: string
+  exerciseId: string
+  setNumber: number
+  side: Side | null
+  reps: number | null
+  weightKg: number | null
+  durationS: number | null
+  lengthCm: number | null
+  pain: number | null
+  createdAt: string
+}
+
+export type WorkoutSetInput = Omit<WorkoutSet, 'id' | 'createdAt'>

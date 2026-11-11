@@ -39,6 +39,11 @@ export function weekRange(key: DateKey): { start: DateKey; end: DateKey } {
   return { start, end: addDays(start, 6) }
 }
 
+/** "Wed, 11 Nov" (order follows the device's locale). */
+export function formatShortDate(key: DateKey): string {
+  return fromDateKey(key).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
 export function formatLongDate(key: DateKey): string {
   return fromDateKey(key).toLocaleDateString(undefined, {
     weekday: 'long',

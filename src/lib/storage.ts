@@ -9,7 +9,18 @@
  * and `user_id` is filled in by the database (default auth.uid()), so it never appears here.
  */
 import { supabase } from './supabase'
-import type { Completion, DateKey, Habit, HabitInput } from './types'
+import type {
+  Completion,
+  DateKey,
+  Habit,
+  HabitInput,
+  ProgramSettings,
+  SessionKey,
+  WorkoutSession,
+  WorkoutSessionUpdate,
+  WorkoutSet,
+  WorkoutSetInput,
+} from './types'
 
 // ---------- row types and mapping (private) ----------
 
@@ -144,14 +155,202 @@ export async function deleteCompletion(id: string): Promise<void> {
   if (error) throw error
 }
 
+// ---------- program settings ----------
+
+export async function getProgramSettings(): Promise<ProgramSettings | null> {
+  const { data, error } = await supabase
+    .from('program_settings')
+    .select('start_date')
+    .maybeSingle<{ start_date: string }>()
+  if (error) throw error
+  return data ? { startDate: data.start_date } : null
+}
+
+export async function saveProgramStart(startDate: DateKey): Promise<void> {
+  const { error } = await supabase
+    .from('program_settings')
+    .upsert({ start_date: startDate, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+  if (error) throw error
+}
+
+// ---------- workout sessions ----------
+
+interface SessionRow {
+  id: string
+  date: string
+  session_key: SessionKey
+  knee_pain: number | null
+  knee_pain_next_morning: number | null
+  notes: string | null
+  created_at: string
+}
+
+const SESSION_COLUMNS = 'id, date, session_key, knee_pain, knee_pain_next_morning, notes, created_at'
+
+function toSession(row: SessionRow): WorkoutSession {
+  return {
+    id: row.id,
+    date: row.date,
+    sessionKey: row.session_key,
+    kneePain: row.knee_pain,
+    kneePainNextMorning: row.knee_pain_next_morning,
+    notes: row.notes ?? '',
+    createdAt: row.created_at,
+  }
+}
+
+/** Sessions with `from <= date <= to`, oldest first. */
+export async function listWorkoutSessions(from: DateKey, to: DateKey): Promise<WorkoutSession[]> {
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .select(SESSION_COLUMNS)
+    .gte('date', from)
+    .lte('date', to)
+    .order('date')
+    .returns<SessionRow[]>()
+  if (error) throw error
+  return data.map(toSession)
+}
+
+export async function getWorkoutSession(id: string): Promise<WorkoutSession | null> {
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .select(SESSION_COLUMNS)
+    .eq('id', id)
+    .maybeSingle<SessionRow>()
+  if (error) throw error
+  return data ? toSession(data) : null
+}
+
+/** Opens the session for that day, creating it if needed (one per program day per date). */
+export async function getOrCreateWorkoutSession(date: DateKey, sessionKey: SessionKey): Promise<WorkoutSession> {
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .insert({ date, session_key: sessionKey })
+    .select(SESSION_COLUMNS)
+    .single<SessionRow>()
+  if (!error) return toSession(data)
+  if (error.code !== UNIQUE_VIOLATION) throw error
+
+  const existing = await supabase
+    .from('workout_sessions')
+    .select(SESSION_COLUMNS)
+    .eq('date', date)
+    .eq('session_key', sessionKey)
+    .single<SessionRow>()
+  if (existing.error) throw existing.error
+  return toSession(existing.data)
+}
+
+export async function updateWorkoutSession(id: string, update: WorkoutSessionUpdate): Promise<void> {
+  const row: Record<string, unknown> = {}
+  if ('kneePain' in update) row.knee_pain = update.kneePain
+  if ('kneePainNextMorning' in update) row.knee_pain_next_morning = update.kneePainNextMorning
+  if ('notes' in update) row.notes = update.notes
+  const { error } = await supabase.from('workout_sessions').update(row).eq('id', id)
+  if (error) throw error
+}
+
+/** Deletes the session; the database deletes its sets too (ON DELETE CASCADE). */
+export async function deleteWorkoutSession(id: string): Promise<void> {
+  const { error } = await supabase.from('workout_sessions').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ---------- workout sets ----------
+
+interface SetRow {
+  id: string
+  session_id: string
+  exercise_id: string
+  set_number: number
+  side: 'left' | 'right' | null
+  reps: number | null
+  weight_kg: number | null
+  duration_s: number | null
+  length_cm: number | null
+  pain: number | null
+  created_at: string
+}
+
+const SET_COLUMNS = 'id, session_id, exercise_id, set_number, side, reps, weight_kg, duration_s, length_cm, pain, created_at'
+
+/** Postgres `numeric` can arrive as a string; normalise to number. */
+const num = (v: number | string | null) => (v == null ? null : Number(v))
+
+function toSet(row: SetRow): WorkoutSet {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    exerciseId: row.exercise_id,
+    setNumber: row.set_number,
+    side: row.side,
+    reps: row.reps,
+    weightKg: num(row.weight_kg),
+    durationS: row.duration_s,
+    lengthCm: num(row.length_cm),
+    pain: row.pain,
+    createdAt: row.created_at,
+  }
+}
+
+function toSetRow(input: Partial<WorkoutSetInput>) {
+  const row: Record<string, unknown> = {}
+  if ('sessionId' in input) row.session_id = input.sessionId
+  if ('exerciseId' in input) row.exercise_id = input.exerciseId
+  if ('setNumber' in input) row.set_number = input.setNumber
+  if ('side' in input) row.side = input.side
+  if ('reps' in input) row.reps = input.reps
+  if ('weightKg' in input) row.weight_kg = input.weightKg
+  if ('durationS' in input) row.duration_s = input.durationS
+  if ('lengthCm' in input) row.length_cm = input.lengthCm
+  if ('pain' in input) row.pain = input.pain
+  return row
+}
+
+/** All sets for the given sessions. */
+export async function listWorkoutSets(sessionIds: string[]): Promise<WorkoutSet[]> {
+  if (sessionIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('workout_sets')
+    .select(SET_COLUMNS)
+    .in('session_id', sessionIds)
+    .order('created_at')
+    .returns<SetRow[]>()
+  if (error) throw error
+  return data.map(toSet)
+}
+
+export async function addWorkoutSet(input: WorkoutSetInput): Promise<WorkoutSet> {
+  const { data, error } = await supabase
+    .from('workout_sets')
+    .insert(toSetRow(input))
+    .select(SET_COLUMNS)
+    .single<SetRow>()
+  if (error) throw error
+  return toSet(data)
+}
+
+export async function updateWorkoutSet(id: string, input: Partial<WorkoutSetInput>): Promise<void> {
+  const { error } = await supabase.from('workout_sets').update(toSetRow(input)).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteWorkoutSet(id: string): Promise<void> {
+  const { error } = await supabase.from('workout_sets').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ---------- live sync ----------
 
+type SyncedTable = 'habits' | 'completions' | 'program_settings' | 'workout_sessions' | 'workout_sets'
+
 /**
- * Calls `onChange` whenever habits or completions change on any device (Supabase Realtime),
- * and when the tab becomes visible again (in case the phone dropped the connection while
- * locked). Returns an unsubscribe function.
+ * Calls `onChange` whenever a table changes on any device (Supabase Realtime), and when the
+ * tab becomes visible again (in case the phone dropped the connection while locked).
+ * Returns an unsubscribe function.
  */
-export function subscribeToChanges(table: 'habits' | 'completions', onChange: () => void): () => void {
+export function subscribeToChanges(table: SyncedTable, onChange: () => void): () => void {
   const channel = supabase
     .channel(`${table}-changes-${Math.random().toString(36).slice(2)}`)
     .on('postgres_changes', { event: '*', schema: 'public', table }, onChange)

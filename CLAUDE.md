@@ -16,12 +16,16 @@ Personal workout and habit tracker for a single user. **Phone first**, but must 
 - `npm run dev` — dev server on port 5173, listening on the LAN (`server.host: true`) so a phone on the same Wi-Fi can open it
 - `npm run build` — type-check and build to `dist/`
 - `npm run lint` — oxlint
+- `npm test` — vitest unit tests (`src/lib/*.test.ts`: dates, program schedule, streaks, set maths).
+  Date logic must pass in any time zone, e.g. `TZ=Pacific/Kiritimati npm test`.
 
 ## Folder structure
 
 ```
 supabase/
-  migrations/           SQL schema + RLS policies; run in the Supabase SQL editor
+  migrations/           SQL schema + RLS policies; run each file once, in order, in the Supabase SQL editor
+    20261111000000_init.sql      habits, completions
+    20261111010000_workouts.sql  program_settings, workout_sessions, workout_sets
 src/
   main.tsx              entry point
   App.tsx               session gate (sign-in vs app) + routes
@@ -31,25 +35,35 @@ src/
     HabitForm.tsx       add/edit/delete habit sheet
     ImportLocalData.tsx one-time offer to copy pre-Supabase localStorage data to the account
     ErrorBanner.tsx     shows any failed save/load (catches unhandled promise rejections)
+    KneePainPicker.tsx  0–10 buttons; values above the knee-rule limit shown amber
+    LineChart.tsx       SVG line chart over dates: crosshair tooltip, legend, reference line, table view
+    HabitHeatmap.tsx    12-week Mon–Sun grid in the habit colour
+    Badge.tsx           small pill (Deload, Test week)
     icons.tsx           inline SVG icons
   pages/
     SignInPage.tsx      email + password; shows setup help if env vars are missing
     TodayPage.tsx       today's habits, tap to complete, undo
     HabitsPage.tsx      list + add/edit/delete habits
-    WorkoutsPage.tsx    placeholder
-    StatsPage.tsx       placeholder
+    WorkoutsPage.tsx    program start date, week/phase, knee rule, today's session, this week, history
+    WorkoutSessionPage.tsx  /workouts/s/:id — log sets per exercise, "last time", knee pain, notes
+    StatsPage.tsx       Habits tab (streaks, heatmaps) + Workouts tab (knee, progress, left/right, tests)
   hooks/
     useSession.ts       current Supabase session (undefined = loading, null = signed out)
     useHabits.ts        load + mutate habits (via storage), live-updates
     useCompletions.ts   load + mutate completions for a date range (via storage), optimistic, live-updates
     useToday.ts         today's local date key, rolls over at midnight
+    useLiveQuery.ts     generic: run a storage call, reload on deps / realtime changes
+    useWorkouts.ts      program settings, session history, one session with optimistic set logging
   lib/
     supabase.ts         the Supabase client (reads VITE_ env vars)
     storage.ts          THE ONLY place that reads/writes habit data
     auth.ts             sign in / sign out / session
-    types.ts            Habit, Completion, DateKey, HabitInput
+    types.ts            Habit, Completion, WorkoutSession, WorkoutSet, ... (app-side camelCase types)
     dates.ts            local date-key helpers (toDateKey, weekRange, ...)
     colors.ts           habit colour palette
+    program.ts          the 12-week Bulletproof Volleyball Program as data (sessions, exercises, Rx per phase, tests)
+    schedule.ts         program week/phase for a date, deload/test weeks, planSession() — pure
+    stats.ts            streaks, completion rates, set summaries, progress series — pure
 ```
 
 ## Rules
@@ -85,6 +99,25 @@ src/
 - Weeks start on Monday (`WEEK_STARTS_ON` in `dates.ts`).
 - Habit frequency is either `{ type: 'daily' }` or `{ type: 'weekly', timesPerWeek: 1–7 }`.
 
+### Workouts
+
+- The training program is **static content in `src/lib/program.ts`**, not database rows. The database
+  only stores what was actually done. Source: the user's "Bulletproof Volleyball Program" PDF
+  (12 weeks, phases 1–4 / 5–8 / 9–12, gym Mon/Tue/Wed/Sat, deloads weeks 4 and 8, tests Wed of
+  weeks 1, 4, 8, 12, knee rule 3/10). Units are **kg**.
+- **Never rename an exercise `id`** — logged sets reference it. A movement that changes between phases
+  (wall sit → overloaded pull, drop landing → drop jump → depth jump) is a separate exercise with its own id.
+- **Sets are separate records** (`workout_sets`: one row per set done), like completions — never counters.
+  Only the columns the exercise's `fields` use are filled in (`kg`→weight_kg, `reps`, `sec`→duration_s,
+  `cm`→length_cm, `pain`). Per-side exercises log `side` left then right, left first.
+- Program week comes from `program_settings.start_date` (Monday of week 1) via `schedule.ts`; it is
+  computed, not stored on sessions, so changing the start date re-labels history.
+- One session per program day per date (`unique (user_id, date, session_key)`);
+  `getOrCreateWorkoutSession` reopens an existing one.
+- Deload = `round(sets × 0.6)` (min 1) and exercises with `skipOnDeload` are dropped.
+- Business logic (week maths, streaks, progress) lives in pure functions in `schedule.ts` / `stats.ts`
+  with unit tests; pages only render.
+
 ### UI
 
 - Phone first: design for ~375px wide, then enhance at `md:` (768px+), where the bottom nav is replaced by a sidebar.
@@ -92,6 +125,8 @@ src/
 - Respect iPhone safe areas (`env(safe-area-inset-*)`) for the bottom bar and sheets.
 - Support light and dark mode via Tailwind `dark:` variants (follows the system setting).
 - Habit colours are dynamic hex values, so apply them with inline `style`, not generated Tailwind classes.
+- Charts: colours are CSS variables in `index.css` (`--series-1/2`, validated colour-blind safe in both
+  modes); 2px lines, ringed dots, hairline grid; a legend for 2+ series; every chart has a table view.
 
 ### Supabase + Vercel setup
 

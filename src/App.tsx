@@ -6,6 +6,7 @@ import { HabitsPage } from './pages/HabitsPage'
 import { SignInPage } from './pages/SignInPage'
 import { StatsPage } from './pages/StatsPage'
 import { TodayPage } from './pages/TodayPage'
+import { WorkoutSessionPage } from './pages/WorkoutSessionPage'
 import { WorkoutsPage } from './pages/WorkoutsPage'
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
               <Route index element={<TodayPage />} />
               <Route path="habits" element={<HabitsPage />} />
               <Route path="workouts" element={<WorkoutsPage />} />
+              <Route path="workouts/s/:id" element={<WorkoutSessionPage />} />
               <Route path="stats" element={<StatsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

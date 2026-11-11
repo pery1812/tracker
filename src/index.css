@@ -3,6 +3,27 @@
 :root {
   color-scheme: light dark;
   -webkit-tap-highlight-color: transparent;
+
+  /* Chart colours (validated palette: colour-blind safe, 3:1 on the card surface). */
+  --chart-surface: #ffffff;
+  --chart-grid: #e2e8f0;
+  --chart-text: #64748b;
+  --chart-crosshair: #94a3b8;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --chart-reference: #d97706;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-surface: #0f172a;
+    --chart-grid: #1e293b;
+    --chart-text: #94a3b8;
+    --chart-crosshair: #475569;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --chart-reference: #f59e0b;
+  }
 }
 
 body {
