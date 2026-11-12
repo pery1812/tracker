@@ -5,9 +5,10 @@ import { LineChart, type ChartSeries } from '../components/LineChart'
 import { useCompletions } from '../hooks/useCompletions'
 import { useHabits } from '../hooks/useHabits'
 import { useToday } from '../hooks/useToday'
-import { useProgramSettings, useWorkoutHistory } from '../hooks/useWorkouts'
+import { useCustomExercises, useProgramSettings, useWorkoutHistory } from '../hooks/useWorkouts'
 import { addDays, formatShortDate, toDateKey, weekRange } from '../lib/dates'
-import { FIELD_UNITS, KNEE_RULE, SESSION_ORDER, TESTS, chartableExercises, getExercise, type Exercise } from '../lib/program'
+import { chartableExercises, makeExerciseLookup } from '../lib/exercises'
+import { FIELD_UNITS, KNEE_RULE, SESSION_ORDER, TESTS, isProgramSession, type Exercise } from '../lib/program'
 import { programWeek } from '../lib/schedule'
 import {
   dailyStreaks,
@@ -103,13 +104,17 @@ function WorkoutStats() {
   const { settings } = useProgramSettings()
   const from = settings?.startDate && settings.startDate < today ? settings.startDate : addDays(today, -7 * 12)
   const history = useWorkoutHistory(addDays(from, -7), today)
+  const { customExercises } = useCustomExercises()
 
-  if (settings === undefined || !history) return null
+  if (settings === undefined || !history || !customExercises) return null
   const { sessions, sets } = history
   if (sessions.length === 0) return <Empty>Log a workout to see stats here.</Empty>
 
   const { start, end } = weekRange(today)
-  const thisWeek = sessions.filter((s) => s.date >= start && s.date <= end && sets.some((x) => x.sessionId === s.id))
+  // Program sessions only: custom workouts are extra and don't count towards the 4 planned days.
+  const thisWeek = sessions.filter(
+    (s) => isProgramSession(s.sessionKind) && s.date >= start && s.date <= end && sets.some((x) => x.sessionId === s.id),
+  )
   const week = settings ? programWeek(settings.startDate, today) : null
 
   return (
@@ -120,8 +125,8 @@ function WorkoutStats() {
         <Tile label="Program" value={week && week >= 1 ? `${Math.min(week, 12)}` : '–'} sub="of 12 weeks" />
       </div>
       <KneeChart sessions={sessions} />
-      <ExerciseProgress sessions={sessions} sets={sets} />
-      <LeftRight sessions={sessions} sets={sets} />
+      <ExerciseProgress sessions={sessions} sets={sets} custom={customExercises} />
+      <LeftRight sessions={sessions} sets={sets} custom={customExercises} />
       <TestResults sessions={sessions} sets={sets} startDate={settings?.startDate} />
     </div>
   )
@@ -154,13 +159,16 @@ function KneeChart({ sessions }: { sessions: WorkoutSession[] }) {
   )
 }
 
-function ExerciseProgress({ sessions, sets }: { sessions: WorkoutSession[]; sets: WorkoutSet[] }) {
+function ExerciseProgress({ sessions, sets, custom }: { sessions: WorkoutSession[]; sets: WorkoutSet[]; custom: Exercise[] }) {
   const withData = useMemo(() => {
     const ids = new Set(sets.map((s) => s.exerciseId))
-    return chartableExercises().filter((e) => ids.has(e.id) && !e.id.startsWith('test-'))
-  }, [sets])
+    return chartableExercises(custom).filter((e) => ids.has(e.id))
+  }, [sets, custom])
   const [chosen, setChosen] = useState<string>('')
-  const exercise = getExercise(chosen) ?? withData.find((e) => e.id === 'deadlift') ?? withData[0]
+  const chosenExercise = makeExerciseLookup(custom)(chosen)
+  const exercise = (chosenExercise && withData.includes(chosenExercise) ? chosenExercise : undefined) ??
+    withData.find((e) => e.id === 'deadlift') ??
+    withData[0]
 
   if (!exercise) return null
   const metric = primaryMetric(exercise)
@@ -196,9 +204,9 @@ function ExerciseProgress({ sessions, sets }: { sessions: WorkoutSession[]; sets
 }
 
 /** Latest left vs right numbers for one-sided work. The program wants the left within 10% of the right. */
-function LeftRight({ sessions, sets }: { sessions: WorkoutSession[]; sets: WorkoutSet[] }) {
-  const rows = chartableExercises()
-    .filter((e) => e.perSide && !e.id.startsWith('test-'))
+function LeftRight({ sessions, sets, custom }: { sessions: WorkoutSession[]; sets: WorkoutSet[]; custom: Exercise[] }) {
+  const rows = chartableExercises(custom)
+    .filter((e) => e.perSide)
     .map((e) => {
       const left = exerciseProgress(e, sessions, sets, 'left').at(-1)
       const right = exerciseProgress(e, sessions, sets, 'right').at(-1)

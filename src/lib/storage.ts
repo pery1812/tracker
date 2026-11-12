@@ -9,13 +9,17 @@
  * and `user_id` is filled in by the database (default auth.uid()), so it never appears here.
  */
 import { supabase } from './supabase'
+import { CUSTOM_ID_PREFIX } from './exercises'
+import type { Exercise } from './program'
 import type {
   Completion,
+  CustomExerciseInput,
+  Field,
   DateKey,
   Habit,
   HabitInput,
   ProgramSettings,
-  SessionKey,
+  SessionKind,
   WorkoutSession,
   WorkoutSessionUpdate,
   WorkoutSet,
@@ -178,20 +182,22 @@ export async function saveProgramStart(startDate: DateKey): Promise<void> {
 interface SessionRow {
   id: string
   date: string
-  session_key: SessionKey
+  session_key: SessionKind
+  extra_exercise_ids: string[] | null
   knee_pain: number | null
   knee_pain_next_morning: number | null
   notes: string | null
   created_at: string
 }
 
-const SESSION_COLUMNS = 'id, date, session_key, knee_pain, knee_pain_next_morning, notes, created_at'
+const SESSION_COLUMNS = 'id, date, session_key, extra_exercise_ids, knee_pain, knee_pain_next_morning, notes, created_at'
 
 function toSession(row: SessionRow): WorkoutSession {
   return {
     id: row.id,
     date: row.date,
-    sessionKey: row.session_key,
+    sessionKind: row.session_key,
+    extraExerciseIds: row.extra_exercise_ids ?? [],
     kneePain: row.knee_pain,
     kneePainNextMorning: row.knee_pain_next_morning,
     notes: row.notes ?? '',
@@ -222,11 +228,11 @@ export async function getWorkoutSession(id: string): Promise<WorkoutSession | nu
   return data ? toSession(data) : null
 }
 
-/** Opens the session for that day, creating it if needed (one per program day per date). */
-export async function getOrCreateWorkoutSession(date: DateKey, sessionKey: SessionKey): Promise<WorkoutSession> {
+/** Opens the session for that day, creating it if needed (one per kind per date). */
+export async function getOrCreateWorkoutSession(date: DateKey, kind: SessionKind): Promise<WorkoutSession> {
   const { data, error } = await supabase
     .from('workout_sessions')
-    .insert({ date, session_key: sessionKey })
+    .insert({ date, session_key: kind })
     .select(SESSION_COLUMNS)
     .single<SessionRow>()
   if (!error) return toSession(data)
@@ -236,7 +242,7 @@ export async function getOrCreateWorkoutSession(date: DateKey, sessionKey: Sessi
     .from('workout_sessions')
     .select(SESSION_COLUMNS)
     .eq('date', date)
-    .eq('session_key', sessionKey)
+    .eq('session_key', kind)
     .single<SessionRow>()
   if (existing.error) throw existing.error
   return toSession(existing.data)
@@ -247,6 +253,7 @@ export async function updateWorkoutSession(id: string, update: WorkoutSessionUpd
   if ('kneePain' in update) row.knee_pain = update.kneePain
   if ('kneePainNextMorning' in update) row.knee_pain_next_morning = update.kneePainNextMorning
   if ('notes' in update) row.notes = update.notes
+  if ('extraExerciseIds' in update) row.extra_exercise_ids = update.extraExerciseIds
   const { error } = await supabase.from('workout_sessions').update(row).eq('id', id)
   if (error) throw error
 }
@@ -341,9 +348,53 @@ export async function deleteWorkoutSet(id: string): Promise<void> {
   if (error) throw error
 }
 
+// ---------- your own exercises ----------
+
+interface CustomExerciseRow {
+  id: string
+  name: string
+  fields: Field[]
+  per_side: boolean
+}
+
+function toCustomExercise(row: CustomExerciseRow): Exercise {
+  return {
+    id: CUSTOM_ID_PREFIX + row.id,
+    name: row.name,
+    fields: row.fields,
+    perSide: row.per_side,
+    custom: true,
+    rx: {},
+  }
+}
+
+export async function listCustomExercises(): Promise<Exercise[]> {
+  const { data, error } = await supabase
+    .from('custom_exercises')
+    .select('id, name, fields, per_side')
+    .order('name')
+    .returns<CustomExerciseRow[]>()
+  if (error) throw error
+  return data.map(toCustomExercise)
+}
+
+/** Creates one of your own exercises. Names are unique per user (ignoring case). */
+export async function createCustomExercise(input: CustomExerciseInput): Promise<Exercise> {
+  const { data, error } = await supabase
+    .from('custom_exercises')
+    .insert({ name: input.name.trim(), fields: input.fields, per_side: input.perSide })
+    .select('id, name, fields, per_side')
+    .single<CustomExerciseRow>()
+  if (error) {
+    if (error.code === UNIQUE_VIOLATION) throw new Error(`You already have an exercise called “${input.name.trim()}”.`)
+    throw error
+  }
+  return toCustomExercise(data)
+}
+
 // ---------- live sync ----------
 
-type SyncedTable = 'habits' | 'completions' | 'program_settings' | 'workout_sessions' | 'workout_sets'
+type SyncedTable = 'habits' | 'completions' | 'program_settings' | 'workout_sessions' | 'workout_sets' | 'custom_exercises'
 
 /**
  * Calls `onChange` whenever a table changes on any device (Supabase Realtime), and when the

@@ -81,8 +81,8 @@ describe('workout sets', () => {
   })
   it('tracks the best set per session, per side when asked', () => {
     const sessions: WorkoutSession[] = [
-      { id: 'a', date: '2026-11-02', sessionKey: 'mon', kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
-      { id: 'b', date: '2026-11-09', sessionKey: 'mon', kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
+      { id: 'a', date: '2026-11-02', sessionKind: 'mon', extraExerciseIds: [], kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
+      { id: 'b', date: '2026-11-09', sessionKind: 'mon', extraExerciseIds: [], kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
     ]
     const sets = [
       s({ sessionId: 'a', weightKg: 90, reps: 6 }),

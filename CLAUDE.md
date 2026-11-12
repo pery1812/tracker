@@ -26,6 +26,7 @@ supabase/
   migrations/           SQL schema + RLS policies; run each file once, in order, in the Supabase SQL editor
     20261111000000_init.sql      habits, completions
     20261111010000_workouts.sql  program_settings, workout_sessions, workout_sets
+    20261112000000_custom_workouts.sql  'custom' sessions, extra_exercise_ids, custom_exercises
 src/
   main.tsx              entry point
   App.tsx               session gate (sign-in vs app) + routes
@@ -36,6 +37,7 @@ src/
     ImportLocalData.tsx one-time offer to copy pre-Supabase localStorage data to the account
     ErrorBanner.tsx     shows any failed save/load (catches unhandled promise rejections)
     KneePainPicker.tsx  0–10 buttons; values above the knee-rule limit shown amber
+    ExercisePicker.tsx  sheet to search/add an exercise to a session, or create your own
     LineChart.tsx       SVG line chart over dates: crosshair tooltip, legend, reference line, table view
     HabitHeatmap.tsx    12-week Mon–Sun grid in the habit colour
     Badge.tsx           small pill (Deload, Test week)
@@ -45,7 +47,7 @@ src/
     TodayPage.tsx       today's habits, tap to complete, undo
     HabitsPage.tsx      list + add/edit/delete habits
     WorkoutsPage.tsx    program start date, week/phase, knee rule, today's session, this week, history
-    WorkoutSessionPage.tsx  /workouts/s/:id — log sets per exercise, "last time", knee pain, notes
+    WorkoutSessionPage.tsx  /workouts/s/:id — log sets per exercise, "last time", + Add exercise, knee pain, notes
     StatsPage.tsx       Habits tab (streaks, heatmaps) + Workouts tab (knee, progress, left/right, tests)
   hooks/
     useSession.ts       current Supabase session (undefined = loading, null = signed out)
@@ -53,7 +55,7 @@ src/
     useCompletions.ts   load + mutate completions for a date range (via storage), optimistic, live-updates
     useToday.ts         today's local date key, rolls over at midnight
     useLiveQuery.ts     generic: run a storage call, reload on deps / realtime changes
-    useWorkouts.ts      program settings, session history, one session with optimistic set logging
+    useWorkouts.ts      program settings, custom exercises, session history, one session with optimistic set logging
   lib/
     supabase.ts         the Supabase client (reads VITE_ env vars)
     storage.ts          THE ONLY place that reads/writes habit data
@@ -63,6 +65,7 @@ src/
     colors.ts           habit colour palette
     program.ts          the 12-week Bulletproof Volleyball Program as data (sessions, exercises, Rx per phase, tests)
     schedule.ts         program week/phase for a date, deload/test weeks, planSession() — pure
+    exercises.ts        lookup across program + your own exercises, picker groups, plannedExtra() — pure
     stats.ts            streaks, completion rates, set summaries, progress series — pure
 ```
 
@@ -112,8 +115,19 @@ src/
   `cm`→length_cm, `pain`). Per-side exercises log `side` left then right, left first.
 - Program week comes from `program_settings.start_date` (Monday of week 1) via `schedule.ts`; it is
   computed, not stored on sessions, so changing the start date re-labels history.
-- One session per program day per date (`unique (user_id, date, session_key)`);
-  `getOrCreateWorkoutSession` reopens an existing one.
+- One session per kind per date (`unique (user_id, date, session_key)`);
+  `getOrCreateWorkoutSession` reopens an existing one. Kinds: `mon`/`tue`/`wed`/`sat` (program days)
+  and `custom` (any day, no plan). In app types the column is `sessionKind`; use `sessionTitle()` and
+  `isProgramSession()` rather than indexing `SESSIONS` with it.
+- Exercises added by hand live in `workout_sessions.extra_exercise_ids` (ordered). The session page
+  also shows any exercise with logged sets that isn't planned, so a logged set is never hidden.
+  An added exercise can be removed only while it has no sets.
+- Your own exercises are rows in `custom_exercises` (name unique per user, ignoring case); in the app
+  their id is `custom-<uuid>` (`CUSTOM_ID_PREFIX`), so they can't clash with program ids. They use the
+  same `fields` / `perSide` model as program exercises.
+- "Last time" = the most recent earlier session (earlier date, or earlier the same day) that logged
+  that exercise, whatever kind of session it was.
+- "This week x/4" counts program sessions only; custom workouts are extra.
 - Deload = `round(sets × 0.6)` (min 1) and exercises with `skipOnDeload` are dropped.
 - Business logic (week maths, streaks, progress) lives in pure functions in `schedule.ts` / `stats.ts`
   with unit tests; pages only render.

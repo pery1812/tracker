@@ -55,6 +55,8 @@ export interface PlannedExercise {
   label: string
   perSide: boolean
   isTest: boolean
+  /** Added by hand to this session rather than planned by the program. */
+  added?: boolean
 }
 
 /** Deload: about 40% fewer sets, never fewer than one. */

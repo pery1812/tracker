@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import * as storage from '../lib/storage'
-import type { DateKey, WorkoutSessionUpdate, WorkoutSet, WorkoutSetInput } from '../lib/types'
+import type { CustomExerciseInput, DateKey, WorkoutSessionUpdate, WorkoutSet, WorkoutSetInput } from '../lib/types'
 import { useLiveQuery } from './useLiveQuery'
 
 export function useProgramSettings() {
@@ -14,6 +14,20 @@ export function useProgramSettings() {
   )
   // `undefined` while loading, `null` when not set yet.
   return { settings: data, saveStart }
+}
+
+/** Your own exercises (undefined while loading) and a way to create one. */
+export function useCustomExercises() {
+  const { data, reload } = useLiveQuery(() => storage.listCustomExercises(), [], ['custom_exercises'])
+  const create = useCallback(
+    async (input: CustomExerciseInput) => {
+      const exercise = await storage.createCustomExercise(input)
+      reload()
+      return exercise
+    },
+    [reload],
+  )
+  return { customExercises: data, createCustomExercise: create }
 }
 
 /** Sessions in a date range plus all their sets. */

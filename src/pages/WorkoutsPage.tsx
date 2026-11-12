@@ -6,10 +6,20 @@ import { PageHeader } from '../components/Layout'
 import { useToday } from '../hooks/useToday'
 import { useProgramSettings, useWorkoutHistory } from '../hooks/useWorkouts'
 import { addDays, formatShortDate, fromDateKey, weekRange } from '../lib/dates'
-import { DELOAD_NOTE, KNEE_RULE, OTHER_DAYS, PHASES, PROGRAM_WEEKS, SESSIONS, SESSION_ORDER } from '../lib/program'
+import {
+  CUSTOM_SESSION_TITLE,
+  DELOAD_NOTE,
+  KNEE_RULE,
+  OTHER_DAYS,
+  PHASES,
+  PROGRAM_WEEKS,
+  SESSIONS,
+  SESSION_ORDER,
+  sessionTitle,
+} from '../lib/program'
 import { isDeloadWeek, isTestWeek, phaseForWeek, plannedSessionKey, programWeek } from '../lib/schedule'
 import * as storage from '../lib/storage'
-import type { DateKey, SessionKey, WorkoutSession } from '../lib/types'
+import type { DateKey, SessionKind, WorkoutSession } from '../lib/types'
 
 const card = 'rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800'
 
@@ -96,12 +106,14 @@ function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; s
   const sets = history?.sets ?? []
   const setCount = (id: string) => sets.filter((s) => s.sessionId === id).length
 
-  async function open(key: SessionKey, date: DateKey = today) {
+  async function open(key: SessionKind, date: DateKey = today) {
     const session = await storage.getOrCreateWorkoutSession(date, key)
     navigate(`/workouts/s/${session.id}`)
   }
 
-  const todaysSession = planned ? sessions.find((s) => s.date === today && s.sessionKey === planned) : undefined
+  const todaysSession = planned ? sessions.find((s) => s.date === today && s.sessionKind === planned) : undefined
+  const todaysCustom = sessions.find((s) => s.date === today && s.sessionKind === 'custom')
+  const customLabel = todaysCustom ? `Continue custom workout (${setCount(todaysCustom.id)} sets)` : CUSTOM_SESSION_TITLE
   const thisWeek = sessions.filter((s) => s.date >= weekStart && s.date <= weekEnd)
 
   // Knee rule: the latest rated session in the last week.
@@ -173,12 +185,30 @@ function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; s
         ) : (
           <>
             <h2 className="text-xl font-bold">{OTHER_DAYS[fromDateKey(today).getDay()].title}</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{OTHER_DAYS[fromDateKey(today).getDay()].goal}</p>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">{OTHER_DAYS[fromDateKey(today).getDay()].goal}</p>
+            <button
+              type="button"
+              onClick={() => open('custom')}
+              className="w-full rounded-xl bg-slate-900 py-3.5 font-semibold text-white dark:bg-white dark:text-slate-900"
+            >
+              {todaysCustom ? `Continue workout (${setCount(todaysCustom.id)} sets logged)` : 'Log a workout'}
+            </button>
+            <p className="mt-2 text-center text-xs text-slate-500">Pick exercises from your program or add your own</p>
           </>
         )}
-        <details className="mt-4">
+        <details className="mt-4" open={Boolean(planned && todaysCustom)}>
           <summary className="cursor-pointer text-sm font-medium text-slate-500">Doing a different session today?</summary>
           <div className="mt-3 grid grid-cols-2 gap-2">
+            {planned && (
+              <button
+                type="button"
+                onClick={() => open('custom')}
+                className="col-span-2 rounded-xl bg-slate-100 px-3 py-3 text-left text-sm font-semibold dark:bg-slate-800"
+              >
+                {customLabel}
+                <span className="block text-xs font-normal text-slate-500">Pick your own exercises</span>
+              </button>
+            )}
             {SESSION_ORDER.filter((k) => k !== planned).map((k) => (
               <button
                 key={k}
@@ -197,7 +227,7 @@ function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; s
         <h2 className="mb-2 text-sm font-semibold text-slate-500 dark:text-slate-400">This week</h2>
         <div className="grid grid-cols-4 gap-2">
           {SESSION_ORDER.map((k) => {
-            const done = thisWeek.find((s) => s.sessionKey === k && setCount(s.id) > 0)
+            const done = thisWeek.find((s) => s.sessionKind === k && setCount(s.id) > 0)
             const label = fromDateKey(addDays(weekStart, SESSIONS[k].weekday - 1)).toLocaleDateString(undefined, { weekday: 'short' })
             const inner = (
               <>
@@ -229,7 +259,7 @@ function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; s
             <li key={s.id}>
               <Link to={`/workouts/s/${s.id}`} className={`${card} flex items-center gap-3`}>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{SESSIONS[s.sessionKey].title}</span>
+                  <span className="block truncate font-semibold">{sessionTitle(s.sessionKind)}</span>
                   <span className="block text-sm text-slate-500 dark:text-slate-400">
                     {formatShortDate(s.date)} · Week {programWeek(startDate, s.date)} · {setCount(s.id)} sets
                   </span>
@@ -259,7 +289,7 @@ function MorningKneeCheck({ session }: { session: WorkoutSession }) {
   return (
     <section className={`${card} mb-4`}>
       <KneePainPicker
-        label={`Right knee this morning, after ${SESSIONS[session.sessionKey].title} (${formatShortDate(session.date)})?`}
+        label={`Right knee this morning, after ${sessionTitle(session.sessionKind)} (${formatShortDate(session.date)})?`}
         value={null}
         onChange={async (n) => {
           if (saving) return

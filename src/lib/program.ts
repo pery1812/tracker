@@ -7,13 +7,10 @@
  * separate exercise with its own id, so "last time" and progress charts compare like with like.
  */
 
-import type { SessionKey } from './types'
+import type { Field, SessionKey, SessionKind } from './types'
 
 export type Phase = 1 | 2 | 3
-export type { SessionKey }
-
-/** What gets logged for each set. No fields = the set is just ticked off as done. */
-export type Field = 'kg' | 'reps' | 'sec' | 'cm' | 'pain'
+export type { Field, SessionKey }
 
 export const FIELD_UNITS: Record<Field, string> = {
   kg: 'kg',
@@ -50,6 +47,8 @@ export interface Exercise {
   cue?: string
   /** Warm-ups are shown first and just ticked off. */
   warmup?: boolean
+  /** Created by you in the app (id 'custom-<uuid>'), not part of the program. */
+  custom?: boolean
   rx: Partial<Record<Phase, Rx>>
 }
 
@@ -569,6 +568,16 @@ const SAT: SessionPlan = {
 export const SESSIONS: Record<SessionKey, SessionPlan> = { mon: MON, tue: TUE, wed: WED, sat: SAT }
 export const SESSION_ORDER: SessionKey[] = ['mon', 'tue', 'wed', 'sat']
 
+export const CUSTOM_SESSION_TITLE = 'Custom workout'
+
+export function sessionTitle(kind: SessionKind): string {
+  return kind === 'custom' ? CUSTOM_SESSION_TITLE : SESSIONS[kind].title
+}
+
+export function isProgramSession(kind: SessionKind): kind is SessionKey {
+  return kind !== 'custom'
+}
+
 /** What the program says for days without a gym session (JS weekday -> text). */
 export const OTHER_DAYS: Record<number, { title: string; goal: string }> = {
   4: { title: 'Football (evening)', goal: 'Daily joint routine as warm-up' },
@@ -650,7 +659,7 @@ export function getExercise(id: string): Exercise | undefined {
   return BY_ID.get(id)
 }
 
-/** Exercises that can show a progress chart (anything with a number logged), in program order. */
-export function chartableExercises(): Exercise[] {
-  return ALL_EXERCISES.filter((e) => e.fields.length > 0 && !e.id.startsWith('test-knee'))
+/** Every program exercise (including warm-ups and tests), in program order. */
+export function programExercises(): Exercise[] {
+  return ALL_EXERCISES
 }

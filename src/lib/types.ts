@@ -27,7 +27,10 @@ export type HabitInput = Pick<Habit, 'name' | 'color' | 'frequency'>
 
 // ---------- workouts ----------
 
+/** A program gym day. */
 export type SessionKey = 'mon' | 'tue' | 'wed' | 'sat'
+/** A program day, or a custom workout on any day with exercises you pick yourself. */
+export type SessionKind = SessionKey | 'custom'
 export type Side = 'left' | 'right'
 
 export interface ProgramSettings {
@@ -38,7 +41,9 @@ export interface ProgramSettings {
 export interface WorkoutSession {
   id: string
   date: DateKey
-  sessionKey: SessionKey
+  sessionKind: SessionKind
+  /** Exercise ids added by hand (custom workout, or extras on a program day), in the order added. */
+  extraExerciseIds: string[]
   /** Right knee 0–10 during the session (the program's knee rule). */
   kneePain: number | null
   kneePainNextMorning: number | null
@@ -46,7 +51,19 @@ export interface WorkoutSession {
   createdAt: string
 }
 
-export type WorkoutSessionUpdate = Partial<Pick<WorkoutSession, 'kneePain' | 'kneePainNextMorning' | 'notes'>>
+export type WorkoutSessionUpdate = Partial<
+  Pick<WorkoutSession, 'kneePain' | 'kneePainNextMorning' | 'notes' | 'extraExerciseIds'>
+>
+
+/** What gets logged for each set. No fields = the set is just ticked off as done. */
+export type Field = 'kg' | 'reps' | 'sec' | 'cm' | 'pain'
+
+/** An exercise you created yourself (not in the program). */
+export interface CustomExerciseInput {
+  name: string
+  fields: Field[]
+  perSide: boolean
+}
 
 /** One set actually done. Only the values the exercise uses are filled in. */
 export interface WorkoutSet {

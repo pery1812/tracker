@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Badge } from '../components/Badge'
+import { ExercisePicker } from '../components/ExercisePicker'
 import { KneePainPicker } from '../components/KneePainPicker'
 import { useToday } from '../hooks/useToday'
-import { useProgramSettings, useWorkoutHistory, useWorkoutSession } from '../hooks/useWorkouts'
+import { useCustomExercises, useProgramSettings, useWorkoutHistory, useWorkoutSession } from '../hooks/useWorkouts'
 import { addDays, formatShortDate } from '../lib/dates'
-import { DELOAD_NOTE, FIELD_UNITS, PHASES, SESSIONS, type Field } from '../lib/program'
+import { makeExerciseLookup, plannedExtra } from '../lib/exercises'
+import { DELOAD_NOTE, FIELD_UNITS, PHASES, isProgramSession, sessionTitle, type Field } from '../lib/program'
 import { isDeloadWeek, isTestWeek, phaseForWeek, planSession, programWeek, type PlannedExercise } from '../lib/schedule'
 import { describeSets, formatSet, suggestIncrease } from '../lib/stats'
 import type { DateKey, Side, WorkoutSet, WorkoutSetInput } from '../lib/types'
@@ -19,11 +21,13 @@ export function WorkoutSessionPage() {
   const today = useToday()
   const { settings } = useProgramSettings()
   const { session, sets, loading, addSet, deleteSet, updateSession, deleteSession } = useWorkoutSession(id)
-  // Earlier sessions, for "last time" numbers.
-  const history = useWorkoutHistory(session ? addDays(session.date, -120) : NO_DATE, session ? addDays(session.date, -1) : NO_DATE)
+  // Earlier sessions (including ones earlier the same day), for "last time" numbers.
+  const history = useWorkoutHistory(session ? addDays(session.date, -120) : NO_DATE, session ? session.date : NO_DATE)
+  const { customExercises, createCustomExercise } = useCustomExercises()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [picking, setPicking] = useState(false)
 
-  if (loading || settings === undefined) return null
+  if (loading || settings === undefined || customExercises === undefined) return null
   if (!session) {
     return (
       <div className={card}>
@@ -37,21 +41,38 @@ export function WorkoutSessionPage() {
 
   const week = settings ? programWeek(settings.startDate, session.date) : 1
   const phase = phaseForWeek(week)
-  const plan = planSession(session.sessionKey, week)
+  const kind = session.sessionKind
+  const isProgram = isProgramSession(kind)
+  const plan = isProgram ? planSession(kind, week) : []
   const plannedIds = new Set(plan.map((p) => p.exercise.id))
+
+  // Exercises added by hand, plus any with logged sets that the plan no longer includes
+  // (e.g. after changing the start date), so no logged set is ever hidden.
+  const lookup = makeExerciseLookup(customExercises)
+  const extraIds = [...new Set([...session.extraExerciseIds, ...sets.map((s) => s.exerciseId)])].filter((x) => !plannedIds.has(x))
+  const extras = extraIds.flatMap((x) => {
+    const exercise = lookup(x)
+    return exercise ? [plannedExtra(exercise, week)] : []
+  })
+  const unknownSets = sets.filter((s) => !plannedIds.has(s.exerciseId) && !lookup(s.exerciseId))
+  const inSession = new Set([...plannedIds, ...extraIds])
+
+  const addExercise = (exerciseId: string) => updateSession({ extraExerciseIds: [...session.extraExerciseIds, exerciseId] })
+  const removeExercise = (exerciseId: string) =>
+    updateSession({ extraExerciseIds: session.extraExerciseIds.filter((x) => x !== exerciseId) })
 
   /** Most recent earlier session that included this exercise. */
   function lastTime(exerciseId: string): { date: DateKey; sets: WorkoutSet[] } | null {
-    if (!history) return null
-    for (const s of [...history.sessions].reverse()) {
+    if (!history || !session) return null
+    const earlier = history.sessions
+      .filter((s) => s.date < session.date || (s.date === session.date && s.createdAt < session.createdAt))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt))
+    for (const s of earlier.reverse()) {
       const found = history.sets.filter((x) => x.sessionId === s.id && x.exerciseId === exerciseId)
       if (found.length) return { date: s.date, sets: found }
     }
     return null
   }
-
-  // Sets logged for exercises that aren't in this week's plan (e.g. the start date was changed).
-  const unplanned = sets.filter((s) => !plannedIds.has(s.exerciseId))
 
   return (
     <>
@@ -62,12 +83,12 @@ export function WorkoutSessionPage() {
         <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
           {formatShortDate(session.date)} · Week {week} · Phase {phase} {PHASES[phase].name}
         </p>
-        <h1 className="text-3xl font-bold tracking-tight">{SESSIONS[session.sessionKey].title}</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{sessionTitle(kind)}</h1>
         <div className="mt-2 flex flex-wrap gap-2">
-          {isDeloadWeek(week) && <Badge tone="sky">Deload</Badge>}
-          {session.sessionKey === 'wed' && isTestWeek(week) && <Badge tone="violet">Test day</Badge>}
+          {isProgram && isDeloadWeek(week) && <Badge tone="sky">Deload</Badge>}
+          {kind === 'wed' && isTestWeek(week) && <Badge tone="violet">Test day</Badge>}
         </div>
-        {isDeloadWeek(week) && <p className="mt-2 text-sm text-sky-800 dark:text-sky-200">{DELOAD_NOTE}</p>}
+        {isProgram && isDeloadWeek(week) && <p className="mt-2 text-sm text-sky-800 dark:text-sky-200">{DELOAD_NOTE}</p>}
       </header>
 
       <div className="flex flex-col gap-3">
@@ -85,10 +106,49 @@ export function WorkoutSessionPage() {
             />
           </div>
         ))}
-        {unplanned.length > 0 && (
-          <p className="text-sm text-slate-500">{unplanned.length} logged sets belong to exercises not in this week’s plan.</p>
+
+        {extras.length > 0 && isProgram && <SectionTitle>Added</SectionTitle>}
+        {extras.map((p) => (
+          <ExerciseCard
+            key={p.exercise.id}
+            planned={p}
+            sessionId={session.id}
+            sets={sets.filter((s) => s.exerciseId === p.exercise.id)}
+            last={lastTime(p.exercise.id)}
+            onAdd={addSet}
+            onDelete={deleteSet}
+            onRemove={session.extraExerciseIds.includes(p.exercise.id) ? () => removeExercise(p.exercise.id) : undefined}
+          />
+        ))}
+
+        {!isProgram && extras.length === 0 && (
+          <div className="rounded-2xl border-2 border-dashed border-slate-300 p-6 text-center text-slate-500 dark:border-slate-700">
+            Add the exercises you’re doing today — from your program or your own.
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 font-semibold text-slate-600 hover:border-slate-400 dark:border-slate-700 dark:text-slate-300"
+        >
+          + Add exercise
+        </button>
+
+        {unknownSets.length > 0 && (
+          <p className="text-sm text-slate-500">{unknownSets.length} logged sets belong to an exercise that no longer exists.</p>
         )}
       </div>
+
+      {picking && (
+        <ExercisePicker
+          custom={customExercises}
+          excludeIds={inSession}
+          onPick={(e) => addExercise(e.id)}
+          onCreate={createCustomExercise}
+          onClose={() => setPicking(false)}
+        />
+      )}
 
       <section className={`${card} mt-6 flex flex-col gap-5`}>
         <KneePainPicker
@@ -163,9 +223,11 @@ interface CardProps {
   last: { date: DateKey; sets: WorkoutSet[] } | null
   onAdd: (input: WorkoutSetInput) => Promise<void>
   onDelete: (set: WorkoutSet) => Promise<void>
+  /** Removes an exercise that was added by hand. Only offered while it has no logged sets. */
+  onRemove?: () => void
 }
 
-function ExerciseCard({ planned, sessionId, sets, last, onAdd, onDelete }: CardProps) {
+function ExerciseCard({ planned, sessionId, sets, last, onAdd, onDelete, onRemove }: CardProps) {
   const { exercise, rx, label, perSide } = planned
   const [extra, setExtra] = useState(0)
   const [showCue, setShowCue] = useState(false)
@@ -282,9 +344,16 @@ function ExerciseCard({ planned, sessionId, sets, last, onAdd, onDelete }: CardP
         </div>
       )}
 
-      <button type="button" onClick={() => setExtra((n) => n + 1)} className="mt-3 text-sm font-medium text-slate-500">
-        + Add set
-      </button>
+      <div className="mt-3 flex justify-between">
+        <button type="button" onClick={() => setExtra((n) => n + 1)} className="text-sm font-medium text-slate-500">
+          + Add set
+        </button>
+        {onRemove && sets.length === 0 && (
+          <button type="button" onClick={onRemove} className="text-sm font-medium text-red-600 dark:text-red-400">
+            Remove
+          </button>
+        )}
+      </div>
     </article>
   )
 }
