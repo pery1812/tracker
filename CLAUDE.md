@@ -27,6 +27,7 @@ supabase/
     20261111000000_init.sql      habits, completions
     20261111010000_workouts.sql  program_settings, workout_sessions, workout_sets
     20261112000000_custom_workouts.sql  'custom' sessions, extra_exercise_ids, custom_exercises
+    20261116000000_program_v2.sql       session keys lower/upper/resilience, scrimmage flag
 src/
   main.tsx              entry point
   App.tsx               session gate (sign-in vs app) + routes
@@ -63,7 +64,7 @@ src/
     types.ts            Habit, Completion, WorkoutSession, WorkoutSet, ... (app-side camelCase types)
     dates.ts            local date-key helpers (toDateKey, weekRange, ...)
     colors.ts           habit colour palette
-    program.ts          the 12-week Bulletproof Volleyball Program as data (sessions, exercises, Rx per phase, tests)
+    program.ts          the 12-week Bulletproof Volleyball Program v2 as data (exercise library, 3 sessions, tests, retired exercises)
     schedule.ts         program week/phase for a date, deload/test weeks, planSession() — pure
     exercises.ts        lookup across program + your own exercises, picker groups, plannedExtra() — pure
     stats.ts            streaks, completion rates, set summaries, progress series — pure
@@ -105,19 +106,34 @@ src/
 ### Workouts
 
 - The training program is **static content in `src/lib/program.ts`**, not database rows. The database
-  only stores what was actually done. Source: the user's "Bulletproof Volleyball Program" PDF
-  (12 weeks, phases 1–4 / 5–8 / 9–12, gym Mon/Tue/Wed/Sat, deloads weeks 4 and 8, tests Wed of
-  weeks 1, 4, 8, 12, knee rule 3/10). Units are **kg**.
+  only stores what was actually done. Source: the user's "Bulletproof Volleyball Program" PDF, **version 2**
+  (12 weeks, phases 1–4 / 5–8 / 9–12; gym **Sun** `lower`, **Mon** `upper`, **Tue** `resilience`;
+  Wed volleyball technique, Thu football, Fri volleyball, Sat rest; deloads weeks 4 and 8; tests on
+  **Sunday** of weeks 1, 4, 8, 12; knee rule 3/10). Units are **kg**.
+- `program.ts` is an exercise library (`EX`, each exercise defined once) plus session plans that list
+  `items`. Exercises dropped from the plan move to `RETIRED_EXERCISES` — never delete them, old logs
+  reference them. When the user sends a new program version: reuse ids for the same movement, add new
+  ids for new movements, retire the rest, and keep old session keys valid (see below).
+- Session keys of program v1 (`mon`/`tue`/`wed`/`sat`) are **legacy**: still valid in the database and
+  shown as "(old plan)" with whatever was logged, but never planned. `isProgramSession()` is true only
+  for the current keys.
+- **Program weeks run Sunday to Saturday** from `program_settings.start_date` (the Sunday of week 1),
+  via `programWeek` / `programWeekRange` in `schedule.ts`. Habit weeks stay Monday to Sunday (`dates.ts`).
+- Letters match the program sheet: they are assigned across all items before skipping anything.
+  `phaseAlternative` = replaces the previous item in other phases (same letter, e.g. drop landing /
+  drop jump / depth jump are all "C"); `continuesPrevious` = done straight after it ("I", then "I2").
+- Scrimmage Sunday (`workout_sessions.scrimmage`): items with `jumpBlock` are dropped and items with
+  `fewerOnScrimmage` get one set fewer. `Rx.easierThroughWeek` gives a gentler start (Nordics 2 × 3 in
+  weeks 1–2). No "add weight" hint in deload weeks.
 - **Never rename an exercise `id`** — logged sets reference it. A movement that changes between phases
   (wall sit → overloaded pull, drop landing → drop jump → depth jump) is a separate exercise with its own id.
 - **Sets are separate records** (`workout_sets`: one row per set done), like completions — never counters.
   Only the columns the exercise's `fields` use are filled in (`kg`→weight_kg, `reps`, `sec`→duration_s,
   `cm`→length_cm, `pain`). Per-side exercises log `side` left then right, left first.
-- Program week comes from `program_settings.start_date` (Monday of week 1) via `schedule.ts`; it is
-  computed, not stored on sessions, so changing the start date re-labels history.
+- Program week is computed, not stored on sessions, so changing the start date re-labels history.
 - One session per kind per date (`unique (user_id, date, session_key)`);
-  `getOrCreateWorkoutSession` reopens an existing one. Kinds: `mon`/`tue`/`wed`/`sat` (program days)
-  and `custom` (any day, no plan). In app types the column is `sessionKind`; use `sessionTitle()` and
+  `getOrCreateWorkoutSession` reopens an existing one. Kinds: `lower`/`upper`/`resilience` (program
+  days), legacy `mon`/`tue`/`wed`/`sat`, and `custom` (any day, no plan). In app types the column is `sessionKind`; use `sessionTitle()` and
   `isProgramSession()` rather than indexing `SESSIONS` with it.
 - Exercises added by hand live in `workout_sessions.extra_exercise_ids` (ordered). The session page
   also shows any exercise with logged sets that isn't planned, so a logged set is never hidden.
@@ -127,7 +143,7 @@ src/
   same `fields` / `perSide` model as program exercises.
 - "Last time" = the most recent earlier session (earlier date, or earlier the same day) that logged
   that exercise, whatever kind of session it was.
-- "This week x/4" counts program sessions only; custom workouts are extra.
+- "This week x/3" counts current-program sessions with logged sets only; custom workouts are extra.
 - Deload = `round(sets × 0.6)` (min 1) and exercises with `skipOnDeload` are dropped.
 - Business logic (week maths, streaks, progress) lives in pure functions in `schedule.ts` / `stats.ts`
   with unit tests; pages only render.

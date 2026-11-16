@@ -9,7 +9,7 @@ import { useCustomExercises, useProgramSettings, useWorkoutHistory } from '../ho
 import { addDays, formatShortDate, toDateKey, weekRange } from '../lib/dates'
 import { chartableExercises, makeExerciseLookup } from '../lib/exercises'
 import { FIELD_UNITS, KNEE_RULE, SESSION_ORDER, TESTS, isProgramSession, type Exercise } from '../lib/program'
-import { programWeek } from '../lib/schedule'
+import { programWeek, programWeekRange } from '../lib/schedule'
 import {
   dailyStreaks,
   exerciseProgress,
@@ -110,7 +110,7 @@ function WorkoutStats() {
   const { sessions, sets } = history
   if (sessions.length === 0) return <Empty>Log a workout to see stats here.</Empty>
 
-  const { start, end } = weekRange(today)
+  const { start, end } = settings ? programWeekRange(settings.startDate, today) : weekRange(today)
   // Program sessions only: custom workouts are extra and don't count towards the 4 planned days.
   const thisWeek = sessions.filter(
     (s) => isProgramSession(s.sessionKind) && s.date >= start && s.date <= end && sets.some((x) => x.sessionId === s.id),

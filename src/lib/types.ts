@@ -27,10 +27,12 @@ export type HabitInput = Pick<Habit, 'name' | 'color' | 'frequency'>
 
 // ---------- workouts ----------
 
-/** A program gym day. */
-export type SessionKey = 'mon' | 'tue' | 'wed' | 'sat'
-/** A program day, or a custom workout on any day with exercises you pick yourself. */
-export type SessionKind = SessionKey | 'custom'
+/** A gym day of the current program (version 2). */
+export type SessionKey = 'lower' | 'upper' | 'resilience'
+/** Gym days of the first version of the program. Only found on old sessions. */
+export type LegacySessionKey = 'mon' | 'tue' | 'wed' | 'sat'
+/** A program day, an old-plan day, or a custom workout on any day with exercises you pick yourself. */
+export type SessionKind = SessionKey | LegacySessionKey | 'custom'
 export type Side = 'left' | 'right'
 
 export interface ProgramSettings {
@@ -44,6 +46,8 @@ export interface WorkoutSession {
   sessionKind: SessionKind
   /** Exercise ids added by hand (custom workout, or extras on a program day), in the order added. */
   extraExerciseIds: string[]
+  /** Scrimmage Sunday: the jump block is dropped and strength work has one set fewer. */
+  scrimmage: boolean
   /** Right knee 0–10 during the session (the program's knee rule). */
   kneePain: number | null
   kneePainNextMorning: number | null
@@ -52,7 +56,7 @@ export interface WorkoutSession {
 }
 
 export type WorkoutSessionUpdate = Partial<
-  Pick<WorkoutSession, 'kneePain' | 'kneePainNextMorning' | 'notes' | 'extraExerciseIds'>
+  Pick<WorkoutSession, 'kneePain' | 'kneePainNextMorning' | 'notes' | 'extraExerciseIds' | 'scrimmage'>
 >
 
 /** What gets logged for each set. No fields = the set is just ticked off as done. */

@@ -5,7 +5,7 @@ import { KneePainPicker } from '../components/KneePainPicker'
 import { PageHeader } from '../components/Layout'
 import { useToday } from '../hooks/useToday'
 import { useProgramSettings, useWorkoutHistory } from '../hooks/useWorkouts'
-import { addDays, formatShortDate, fromDateKey, weekRange } from '../lib/dates'
+import { addDays, formatShortDate, fromDateKey } from '../lib/dates'
 import {
   CUSTOM_SESSION_TITLE,
   DELOAD_NOTE,
@@ -17,7 +17,15 @@ import {
   SESSION_ORDER,
   sessionTitle,
 } from '../lib/program'
-import { isDeloadWeek, isTestWeek, phaseForWeek, plannedSessionKey, programWeek } from '../lib/schedule'
+import {
+  isDeloadWeek,
+  isTestWeek,
+  phaseForWeek,
+  plannedSessionKey,
+  programWeek,
+  programWeekRange,
+  programWeekStartOnOrBefore,
+} from '../lib/schedule'
 import * as storage from '../lib/storage'
 import type { DateKey, SessionKind, WorkoutSession } from '../lib/types'
 
@@ -35,7 +43,7 @@ export function WorkoutsPage() {
       <>
         <PageHeader title="Workouts" />
         <StartDateForm
-          initial={settings?.startDate ?? weekRange(today).start}
+          initial={settings?.startDate ?? programWeekStartOnOrBefore(today)}
           onSave={async (d) => {
             await saveStart(d)
             setEditingStart(false)
@@ -46,7 +54,9 @@ export function WorkoutsPage() {
     )
   }
 
-  return <WorkoutsOverview today={today} startDate={settings.startDate} onEditStart={() => setEditingStart(true)} />
+  return (
+    <WorkoutsOverview today={today} startDate={settings.startDate} onEditStart={() => setEditingStart(true)} saveStart={saveStart} />
+  )
 }
 
 function StartDateForm({
@@ -59,7 +69,7 @@ function StartDateForm({
   onCancel?: () => void
 }) {
   const [value, setValue] = useState(initial)
-  const isMonday = value && fromDateKey(value).getDay() === 1
+  const isSunday = value && fromDateKey(value).getDay() === 0
   return (
     <form
       className={card}
@@ -70,7 +80,7 @@ function StartDateForm({
     >
       <h2 className="mb-1 font-semibold">Bulletproof Volleyball Program</h2>
       <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-        When was (or is) the Monday of week 1? This sets your week, phase, deloads and test days.
+        When was (or is) the Sunday of week 1? This sets your week, phase, deloads and test days.
       </p>
       <input
         type="date"
@@ -79,7 +89,7 @@ function StartDateForm({
         onChange={(e) => setValue(e.target.value)}
         className="mb-2 w-full rounded-xl border border-slate-300 bg-transparent px-4 py-3 text-base dark:border-slate-700"
       />
-      {value && !isMonday && <p className="mb-2 text-sm text-amber-700 dark:text-amber-300">That’s not a Monday — weeks will start on that weekday.</p>}
+      {value && !isSunday && <p className="mb-2 text-sm text-amber-700 dark:text-amber-300">That’s not a Sunday — program weeks start on Sunday, your first gym day.</p>}
       <div className="mt-3 flex gap-3">
         <button type="submit" className="flex-1 rounded-xl bg-slate-900 py-3 font-semibold text-white dark:bg-white dark:text-slate-900">
           Save
@@ -94,13 +104,26 @@ function StartDateForm({
   )
 }
 
-function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; startDate: DateKey; onEditStart: () => void }) {
+function WorkoutsOverview({
+  today,
+  startDate,
+  onEditStart,
+  saveStart,
+}: {
+  today: DateKey
+  startDate: DateKey
+  onEditStart: () => void
+  saveStart: (d: DateKey) => Promise<void>
+}) {
   const navigate = useNavigate()
   const history = useWorkoutHistory(addDays(today, -7 * 16), today)
   const week = programWeek(startDate, today)
   const phase = phaseForWeek(week)
   const planned = plannedSessionKey(today)
-  const { start: weekStart, end: weekEnd } = weekRange(today)
+  // Program weeks run Sunday to Saturday (from the start date), not Monday to Sunday.
+  const { start: weekStart, end: weekEnd } = programWeekRange(startDate, today)
+  const startsOnSunday = fromDateKey(startDate).getDay() === 0
+  const suggestedStart = programWeekStartOnOrBefore(startDate)
 
   const sessions = history?.sessions ?? []
   const sets = history?.sets ?? []
@@ -153,6 +176,22 @@ function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; s
         </button>
       </section>
 
+      {!startsOnSunday && (
+        <section className="mb-4 rounded-2xl bg-sky-50 p-4 text-sm text-sky-950 ring-1 ring-sky-200 dark:bg-sky-950 dark:text-sky-50 dark:ring-sky-900">
+          <p className="mb-3">
+            Your updated program starts each week on <strong>Sunday</strong>. Week 1 is set to {formatShortDate(startDate)}. Move it to{' '}
+            {formatShortDate(suggestedStart)} so Sundays open each week?
+          </p>
+          <button
+            type="button"
+            onClick={() => saveStart(suggestedStart)}
+            className="rounded-lg bg-sky-600 px-4 py-2.5 font-semibold text-white"
+          >
+            Use {formatShortDate(suggestedStart)}
+          </button>
+        </section>
+      )}
+
       {needsMorning && <MorningKneeCheck session={needsMorning} />}
 
       {kneeOver && (
@@ -174,6 +213,9 @@ function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; s
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
               {SESSIONS[planned].goal} · {SESSIONS[planned].minutes}
             </p>
+            {planned === 'lower' && (
+              <p className="-mt-2 mb-4 text-sm text-slate-500 dark:text-slate-400">Scrimmage today? Switch it on in the session.</p>
+            )}
             <button
               type="button"
               onClick={() => open(planned)}
@@ -225,10 +267,11 @@ function WorkoutsOverview({ today, startDate, onEditStart }: { today: DateKey; s
 
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-slate-500 dark:text-slate-400">This week</h2>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {SESSION_ORDER.map((k) => {
             const done = thisWeek.find((s) => s.sessionKind === k && setCount(s.id) > 0)
-            const label = fromDateKey(addDays(weekStart, SESSIONS[k].weekday - 1)).toLocaleDateString(undefined, { weekday: 'short' })
+            const offset = (SESSIONS[k].weekday - fromDateKey(weekStart).getDay() + 7) % 7
+            const label = fromDateKey(addDays(weekStart, offset)).toLocaleDateString(undefined, { weekday: 'short' })
             const inner = (
               <>
                 <span className="text-xs font-semibold">{label}</span>

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { getExercise } from './program'
+import { makeExerciseLookup } from './exercises'
+
+const getExercise = makeExerciseLookup([])
 import { dailyStreaks, describeSets, exerciseProgress, recentDays, recentWeeks, suggestIncrease, weeklyStreaks } from './stats'
 import type { WorkoutSession, WorkoutSet } from './types'
 
@@ -81,8 +83,8 @@ describe('workout sets', () => {
   })
   it('tracks the best set per session, per side when asked', () => {
     const sessions: WorkoutSession[] = [
-      { id: 'a', date: '2026-11-02', sessionKind: 'mon', extraExerciseIds: [], kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
-      { id: 'b', date: '2026-11-09', sessionKind: 'mon', extraExerciseIds: [], kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
+      { id: 'a', date: '2026-11-02', sessionKind: 'mon', extraExerciseIds: [], scrimmage: false, kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
+      { id: 'b', date: '2026-11-09', sessionKind: 'mon', extraExerciseIds: [], scrimmage: false, kneePain: null, kneePainNextMorning: null, notes: '', createdAt: '' },
     ]
     const sets = [
       s({ sessionId: 'a', weightKg: 90, reps: 6 }),

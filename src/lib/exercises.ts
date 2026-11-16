@@ -1,5 +1,5 @@
 /** Looking up exercises across the program and your own custom ones. Pure functions. */
-import { SESSIONS, SESSION_ORDER, programExercises, type Exercise } from './program'
+import { RETIRED_EXERCISES, SESSIONS, SESSION_ORDER, programExercises, type Exercise } from './program'
 import { phaseForWeek, type PlannedExercise } from './schedule'
 import type { Field } from './types'
 
@@ -53,8 +53,9 @@ export function pickerGroups(custom: Exercise[], excludeIds: Set<string>, query:
     { title: 'Your exercises', exercises: [...custom].sort((a, b) => a.name.localeCompare(b.name)).filter(keep) },
     ...SESSION_ORDER.map((k) => ({
       title: `Program · ${SESSIONS[k].title}`,
-      exercises: SESSIONS[k].exercises.filter((e) => !e.warmup).filter(keep),
+      exercises: SESSIONS[k].items.map((i) => i.exercise).filter((e) => !e.warmup).filter(keep),
     })),
+    { title: 'Previous plan', exercises: RETIRED_EXERCISES.filter((e) => !e.warmup).filter(keep) },
   ]
   return groups.filter((g) => g.exercises.length > 0)
 }

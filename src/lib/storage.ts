@@ -184,13 +184,14 @@ interface SessionRow {
   date: string
   session_key: SessionKind
   extra_exercise_ids: string[] | null
+  scrimmage: boolean | null
   knee_pain: number | null
   knee_pain_next_morning: number | null
   notes: string | null
   created_at: string
 }
 
-const SESSION_COLUMNS = 'id, date, session_key, extra_exercise_ids, knee_pain, knee_pain_next_morning, notes, created_at'
+const SESSION_COLUMNS = 'id, date, session_key, extra_exercise_ids, scrimmage, knee_pain, knee_pain_next_morning, notes, created_at'
 
 function toSession(row: SessionRow): WorkoutSession {
   return {
@@ -198,6 +199,7 @@ function toSession(row: SessionRow): WorkoutSession {
     date: row.date,
     sessionKind: row.session_key,
     extraExerciseIds: row.extra_exercise_ids ?? [],
+    scrimmage: row.scrimmage ?? false,
     kneePain: row.knee_pain,
     kneePainNextMorning: row.knee_pain_next_morning,
     notes: row.notes ?? '',
@@ -254,6 +256,7 @@ export async function updateWorkoutSession(id: string, update: WorkoutSessionUpd
   if ('kneePainNextMorning' in update) row.knee_pain_next_morning = update.kneePainNextMorning
   if ('notes' in update) row.notes = update.notes
   if ('extraExerciseIds' in update) row.extra_exercise_ids = update.extraExerciseIds
+  if ('scrimmage' in update) row.scrimmage = update.scrimmage
   const { error } = await supabase.from('workout_sessions').update(row).eq('id', id)
   if (error) throw error
 }

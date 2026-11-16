@@ -7,7 +7,7 @@ import { useToday } from '../hooks/useToday'
 import { useCustomExercises, useProgramSettings, useWorkoutHistory, useWorkoutSession } from '../hooks/useWorkouts'
 import { addDays, formatShortDate } from '../lib/dates'
 import { makeExerciseLookup, plannedExtra } from '../lib/exercises'
-import { DELOAD_NOTE, FIELD_UNITS, PHASES, isProgramSession, sessionTitle, type Field } from '../lib/program'
+import { DELOAD_NOTE, FIELD_UNITS, PHASES, SCRIMMAGE_NOTE, SESSIONS, isProgramSession, sessionTitle, type Field } from '../lib/program'
 import { isDeloadWeek, isTestWeek, phaseForWeek, planSession, programWeek, type PlannedExercise } from '../lib/schedule'
 import { describeSets, formatSet, suggestIncrease } from '../lib/stats'
 import type { DateKey, Side, WorkoutSet, WorkoutSetInput } from '../lib/types'
@@ -43,7 +43,7 @@ export function WorkoutSessionPage() {
   const phase = phaseForWeek(week)
   const kind = session.sessionKind
   const isProgram = isProgramSession(kind)
-  const plan = isProgram ? planSession(kind, week) : []
+  const plan = isProgram ? planSession(kind, week, { scrimmage: session.scrimmage }) : []
   const plannedIds = new Set(plan.map((p) => p.exercise.id))
 
   // Exercises added by hand, plus any with logged sets that the plan no longer includes
@@ -86,9 +86,27 @@ export function WorkoutSessionPage() {
         <h1 className="text-3xl font-bold tracking-tight">{sessionTitle(kind)}</h1>
         <div className="mt-2 flex flex-wrap gap-2">
           {isProgram && isDeloadWeek(week) && <Badge tone="sky">Deload</Badge>}
-          {kind === 'wed' && isTestWeek(week) && <Badge tone="violet">Test day</Badge>}
+          {kind === 'lower' && isTestWeek(week) && <Badge tone="violet">Test day</Badge>}
+          {session.scrimmage && <Badge tone="emerald">Scrimmage</Badge>}
         </div>
+        {isProgram && SESSIONS[kind].note && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{SESSIONS[kind].note}</p>}
         {isProgram && isDeloadWeek(week) && <p className="mt-2 text-sm text-sky-800 dark:text-sky-200">{DELOAD_NOTE}</p>}
+        {kind === 'lower' && (
+          <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-3 rounded-xl bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+            <input
+              type="checkbox"
+              checked={session.scrimmage}
+              onChange={(e) => updateSession({ scrimmage: e.target.checked })}
+              className="mt-0.5 size-5 shrink-0"
+            />
+            <span>
+              <span className="block font-semibold">Scrimmage today</span>
+              <span className="block text-sm text-slate-600 dark:text-slate-300">
+                {session.scrimmage ? SCRIMMAGE_NOTE : 'Drops pogos, approach jumps and depth landings; one set fewer on D–H.'}
+              </span>
+            </span>
+          </label>
+        )}
       </header>
 
       <div className="flex flex-col gap-3">
@@ -101,6 +119,7 @@ export function WorkoutSessionPage() {
               sessionId={session.id}
               sets={sets.filter((s) => s.exerciseId === p.exercise.id)}
               last={lastTime(p.exercise.id)}
+              holdWeights={isDeloadWeek(week)}
               onAdd={addSet}
               onDelete={deleteSet}
             />
@@ -115,6 +134,7 @@ export function WorkoutSessionPage() {
             sessionId={session.id}
             sets={sets.filter((s) => s.exerciseId === p.exercise.id)}
             last={lastTime(p.exercise.id)}
+            holdWeights={isDeloadWeek(week)}
             onAdd={addSet}
             onDelete={deleteSet}
             onRemove={session.extraExerciseIds.includes(p.exercise.id) ? () => removeExercise(p.exercise.id) : undefined}
@@ -224,10 +244,11 @@ interface CardProps {
   onAdd: (input: WorkoutSetInput) => Promise<void>
   onDelete: (set: WorkoutSet) => Promise<void>
   /** Removes an exercise that was added by hand. Only offered while it has no logged sets. */
-  onRemove?: () => void
+  onRemove?: () => void  /** Deload week: same weights, so no "add weight" hint. */
+  holdWeights?: boolean
 }
 
-function ExerciseCard({ planned, sessionId, sets, last, onAdd, onDelete, onRemove }: CardProps) {
+function ExerciseCard({ planned, sessionId, sets, last, onAdd, onDelete, onRemove, holdWeights }: CardProps) {
   const { exercise, rx, label, perSide } = planned
   const [extra, setExtra] = useState(0)
   const [showCue, setShowCue] = useState(false)
@@ -239,7 +260,7 @@ function ExerciseCard({ planned, sessionId, sets, last, onAdd, onDelete, onRemov
 
   const find = (slot: Slot) => sets.find((s) => s.setNumber === slot.setNumber && s.side === slot.side)
   const done = slots.filter(find).length
-  const increase = last && suggestIncrease(exercise, rx, last.sets.filter((s) => s.side !== 'right'))
+  const increase = !holdWeights && last && suggestIncrease(exercise, rx, last.sets.filter((s) => s.side !== 'right'))
 
   function prefill(slot: Slot): Values {
     const sameSide = (s: WorkoutSet) => s.side === slot.side

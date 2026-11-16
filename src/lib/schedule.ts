@@ -1,7 +1,8 @@
 /** Where a date falls in the 12-week program, and what is planned for it. Pure functions. */
-import { addDays, fromDateKey, weekRange } from './dates'
+import { addDays, fromDateKey } from './dates'
 import {
   DELOAD_WEEKS,
+  PROGRAM_WEEK_STARTS_ON,
   PROGRAM_WEEKS,
   SESSIONS,
   SESSION_ORDER,
@@ -27,6 +28,18 @@ export function programWeek(startDate: DateKey, date: DateKey): number {
   return Math.floor(daysBetween(startDate, date) / 7) + 1
 }
 
+/** First and last day (inclusive) of the program week containing `date`. */
+export function programWeekRange(startDate: DateKey, date: DateKey): { start: DateKey; end: DateKey } {
+  const start = addDays(startDate, (programWeek(startDate, date) - 1) * 7)
+  return { start, end: addDays(start, 6) }
+}
+
+/** The program-week start day (Sunday) on or before `date`. */
+export function programWeekStartOnOrBefore(date: DateKey): DateKey {
+  const offset = (fromDateKey(date).getDay() - PROGRAM_WEEK_STARTS_ON + 7) % 7
+  return addDays(date, -offset)
+}
+
 /** Phase for a week, clamped so dates before/after the program still get a sensible plan. */
 export function phaseForWeek(week: number): Phase {
   if (week <= 4) return 1
@@ -37,21 +50,16 @@ export function phaseForWeek(week: number): Phase {
 export const isDeloadWeek = (week: number) => DELOAD_WEEKS.includes(week)
 export const isTestWeek = (week: number) => TEST_WEEKS.includes(week)
 
-/** The gym session planned for a weekday, or null on football / volleyball / rest days. */
+/** The gym session planned for a weekday, or null on volleyball / football / rest days. */
 export function plannedSessionKey(date: DateKey): SessionKey | null {
   const weekday = fromDateKey(date).getDay()
   return SESSION_ORDER.find((k) => SESSIONS[k].weekday === weekday) ?? null
 }
 
-/** The calendar date of a session in the same Monday-to-Sunday week as `date`. */
-export function dateOfSessionInWeek(date: DateKey, key: SessionKey): DateKey {
-  return addDays(weekRange(date).start, SESSIONS[key].weekday - 1)
-}
-
 export interface PlannedExercise {
   exercise: Exercise
   rx: Rx
-  /** "Warm-up", "A", "B", ... or "Test 1", "Test 2", ... */
+  /** "Warm-up", "A", "B", ... "I2", or "Test 1", "Test 2", ... */
   label: string
   perSide: boolean
   isTest: boolean
@@ -64,41 +72,60 @@ export function deloadSets(sets: number): number {
   return Math.max(1, Math.round(sets * 0.6))
 }
 
+export interface PlanOptions {
+  /** Scrimmage Sunday: drop the jump block, one set fewer on the strength work. */
+  scrimmage?: boolean
+}
+
 /** The exercises to do for a session in a given program week, in order. */
-export function planSession(key: SessionKey, week: number): PlannedExercise[] {
+export function planSession(key: SessionKey, week: number, options: PlanOptions = {}): PlannedExercise[] {
   const phase = phaseForWeek(week)
   const deload = isDeloadWeek(week)
+  const items = SESSIONS[key].items
   const out: PlannedExercise[] = []
-  let letter = 0
 
-  const warmups = SESSIONS[key].exercises.filter((e) => e.warmup)
-  const main = SESSIONS[key].exercises.filter((e) => !e.warmup)
-
-  for (const exercise of warmups) {
-    const rx = exercise.rx[phase]
-    if (rx) out.push({ exercise, rx, label: 'Warm-up', perSide: false, isTest: false })
+  for (const item of items.filter((i) => i.exercise.warmup)) {
+    const rx = item.exercise.rx[phase]
+    if (rx) out.push({ exercise: item.exercise, rx, label: 'Warm-up', perSide: false, isTest: false })
   }
 
-  // Tests come right after the warm-up on Wednesday of weeks 1, 4, 8 and 12.
-  if (key === 'wed' && isTestWeek(week)) {
+  // Tests come right after the warm-up on Sunday of weeks 1, 4, 8 and 12.
+  if (key === 'lower' && isTestWeek(week)) {
     TESTS.forEach((exercise, i) => {
       const rx = exercise.rx[phase]!
       out.push({ exercise, rx, label: `Test ${i + 1}`, perSide: Boolean(exercise.perSide), isTest: true })
     })
   }
 
-  for (const exercise of main) {
-    const base = exercise.rx[phase]
+  // Letters are assigned across the whole sheet before anything is skipped (other phases, deload,
+  // scrimmage), so they always match the program sheet.
+  let letter = -1
+  let sub = 1
+  for (const item of items.filter((i) => !i.exercise.warmup)) {
+    if (item.phaseAlternative) {
+      // same letter as the exercise it replaces
+    } else if (item.continuesPrevious && letter >= 0) {
+      sub++
+    } else {
+      letter++
+      sub = 1
+    }
+    const label = String.fromCharCode(65 + letter) + (sub > 1 ? String(sub) : '')
+
+    const base = item.exercise.rx[phase]
     if (!base) continue
+
     if (deload && base.skipOnDeload) continue
-    const rx = deload ? { ...base, sets: deloadSets(base.sets) } : base
-    out.push({
-      exercise,
-      rx,
-      label: String.fromCharCode(65 + letter++),
-      perSide: rx.perSide ?? Boolean(exercise.perSide),
-      isTest: false,
-    })
+    if (options.scrimmage && item.jumpBlock) continue
+
+    let rx: Rx = base
+    if (base.easierThroughWeek && week <= base.easierThroughWeek.week) {
+      rx = { ...rx, sets: base.easierThroughWeek.sets, reps: base.easierThroughWeek.reps }
+    }
+    if (deload) rx = { ...rx, sets: deloadSets(rx.sets) }
+    if (options.scrimmage && item.fewerOnScrimmage) rx = { ...rx, sets: Math.max(1, rx.sets - 1) }
+
+    out.push({ exercise: item.exercise, rx, label, perSide: rx.perSide ?? Boolean(item.exercise.perSide), isTest: false })
   }
   return out
 }
