@@ -47,7 +47,7 @@ src/
     SignInPage.tsx      email + password; shows setup help if env vars are missing
     TodayPage.tsx       today's habits, tap to complete, undo
     HabitsPage.tsx      list + add/edit/delete habits
-    WorkoutsPage.tsx    program start date, week/phase, knee rule, today's session, this week, history
+    WorkoutsPage.tsx    season start date, block/week, knee rule, today's session, this week, history
     WorkoutSessionPage.tsx  /workouts/s/:id — log sets per exercise, "last time", + Add exercise, knee pain, notes
     StatsPage.tsx       Habits tab (streaks, heatmaps) + Workouts tab (knee, progress, left/right, tests)
   hooks/
@@ -64,8 +64,8 @@ src/
     types.ts            Habit, Completion, WorkoutSession, WorkoutSet, ... (app-side camelCase types)
     dates.ts            local date-key helpers (toDateKey, weekRange, ...)
     colors.ts           habit colour palette
-    program.ts          the 12-week Bulletproof Volleyball Program v2 as data (exercise library, 3 sessions, tests, retired exercises)
-    schedule.ts         program week/phase for a date, deload/test weeks, planSession() — pure
+    program.ts          the Bulletproof Volleyball season plan (v3) as data: SEASON blocks, exercise library, 3 sessions, tests, retired exercises
+    schedule.ts         program week -> weekInfo (block, deload/test, Tết, taper), planSession() — pure
     exercises.ts        lookup across program + your own exercises, picker groups, plannedExtra() — pure
     stats.ts            streaks, completion rates, set summaries, progress series — pure
 ```
@@ -106,10 +106,16 @@ src/
 ### Workouts
 
 - The training program is **static content in `src/lib/program.ts`**, not database rows. The database
-  only stores what was actually done. Source: the user's "Bulletproof Volleyball Program" PDF, **version 2**
-  (12 weeks, phases 1–4 / 5–8 / 9–12; gym **Sun** `lower`, **Mon** `upper`, **Tue** `resilience`;
-  Wed volleyball technique, Thu football, Fri volleyball, Sat rest; deloads weeks 4 and 8; tests on
-  **Sunday** of weeks 1, 4, 8, 12; knee rule 3/10). Units are **kg**.
+  only stores what was actually done. Source: the user's "Bulletproof Volleyball Program" PDF, **version 3**
+  (season plan): `SEASON` = six blocks (4, 4, 4, 5, 4, 5 weeks) + 2-week taper = 28 weeks from
+  `SEASON_START` Sun 1 Nov 2026 to the tournament ~16 May 2027. Deload + test Sundays end blocks 1, 2, 3
+  and 5; block 4 week 3 is Tết (home routine only, nothing planned); block 6 has no deload; the taper
+  uses block 6 prescriptions at half the sets. Gym **Sun** `lower`, **Mon** `upper`, **Tue** `resilience`
+  ("Power and resilience"); Wed volleyball technique, Thu football, Fri volleyball, Sat rest. Knee
+  rule 3/10. Units are **kg**. If the tournament date moves, change block 6's `weeks` in `SEASON`.
+- Prescriptions are **per block** (`Rx` keyed 1–6). `cols(b12, b34, b56)` mirrors the PDF's three
+  columns; block-specific lines ("B2: …") are separate keys. `repsBySet` pre-fills different reps per
+  set (back squat block 5: 5, 4, 3, 5). Everything week-related goes through `weekInfo(week)`.
 - `program.ts` is an exercise library (`EX`, each exercise defined once) plus session plans that list
   `items`. Exercises dropped from the plan move to `RETIRED_EXERCISES` — never delete them, old logs
   reference them. When the user sends a new program version: reuse ids for the same movement, add new
@@ -119,13 +125,15 @@ src/
   for the current keys.
 - **Program weeks run Sunday to Saturday** from `program_settings.start_date` (the Sunday of week 1),
   via `programWeek` / `programWeekRange` in `schedule.ts`. Habit weeks stay Monday to Sunday (`dates.ts`).
-- Letters match the program sheet: they are assigned across all items before skipping anything.
-  `phaseAlternative` = replaces the previous item in other phases (same letter, e.g. drop landing /
+- Letters match the program sheet: they are assigned across all items before skipping anything
+  (so Tuesday in block 1 starts at B — there is no clean pull yet). Items with a `group` ("Finisher",
+  "Hip flexors", "Upper finisher", "Optional") get the group name instead of a letter.
+  `phaseAlternative` = replaces the previous item in other blocks (same letter, e.g. drop landing /
   drop jump / depth jump are all "C"); `continuesPrevious` = done straight after it ("I", then "I2").
 - Scrimmage Sunday (`workout_sessions.scrimmage`): items with `jumpBlock` are dropped and items with
   `fewerOnScrimmage` get one set fewer. `Rx.easierThroughWeek` gives a gentler start (Nordics 2 × 3 in
-  weeks 1–2). No "add weight" hint in deload weeks.
-- **Never rename an exercise `id`** — logged sets reference it. A movement that changes between phases
+  weeks 1–2). No "add weight" hint in deload or taper weeks.
+- **Never rename an exercise `id`** — logged sets reference it. A movement that changes between blocks
   (wall sit → overloaded pull, drop landing → drop jump → depth jump) is a separate exercise with its own id.
 - **Sets are separate records** (`workout_sets`: one row per set done), like completions — never counters.
   Only the columns the exercise's `fields` use are filled in (`kg`→weight_kg, `reps`, `sec`→duration_s,

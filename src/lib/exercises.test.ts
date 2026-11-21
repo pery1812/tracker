@@ -45,10 +45,10 @@ describe('picker groups', () => {
 })
 
 describe('added exercises', () => {
-  it('uses the program prescription for the current phase when there is one', () => {
+  it('uses the program prescription for the current block when there is one', () => {
     const find = makeExerciseLookup([])
     expect(plannedExtra(find('deadlift')!, 2).rx.text).toBe('4 × 6, RPE 7')
-    expect(plannedExtra(find('deadlift')!, 6).rx.sets).toBe(5)
+    expect(plannedExtra(find('deadlift')!, 10).rx.sets).toBe(5) // block 3 = old phase 2
   })
   it('falls back to 3 sets for your own exercises, 1 for mark-done ones', () => {
     expect(plannedExtra(hipThrust, 2).rx).toEqual({ sets: 3, text: 'Your exercise' })
@@ -58,7 +58,7 @@ describe('added exercises', () => {
   })
   it('a program exercise outside its phase still gets a plan', () => {
     const find = makeExerciseLookup([])
-    expect(plannedExtra(find('wall-sit')!, 6).rx.sets).toBe(3) // wall sit is phase 1 only
+    expect(plannedExtra(find('wall-sit')!, 6).rx.sets).toBe(3) // wall sit is block 1 only
   })
   it('includes your own exercises with numbers in the charts, not mark-done ones', () => {
     const ids = chartableExercises([swim, mobility]).map((e) => e.id)

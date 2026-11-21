@@ -1,6 +1,6 @@
 /** Looking up exercises across the program and your own custom ones. Pure functions. */
 import { RETIRED_EXERCISES, SESSIONS, SESSION_ORDER, programExercises, type Exercise } from './program'
-import { phaseForWeek, type PlannedExercise } from './schedule'
+import { weekInfo, type PlannedExercise } from './schedule'
 import type { Field } from './types'
 
 /** Your own exercises have ids 'custom-<uuid>' so they can never clash with program ids. */
@@ -61,17 +61,17 @@ export function pickerGroups(custom: Exercise[], excludeIds: Set<string>, query:
 }
 
 /**
- * An exercise added by hand: uses the program's prescription for this phase when it has one,
+ * An exercise added by hand: uses the program's prescription for this block when it has one,
  * otherwise 3 sets (1 for "just mark done") with nothing pre-filled except your last numbers.
  */
 export function plannedExtra(exercise: Exercise, week: number): PlannedExercise {
-  const rx = exercise.rx[phaseForWeek(week)]
+  const rx = exercise.rx[weekInfo(week).block]
   const perSide = rx?.perSide ?? Boolean(exercise.perSide)
   return {
     exercise,
     rx: rx ?? {
       sets: exercise.fields.length ? 3 : 1,
-      text: exercise.custom ? 'Your exercise' : 'Added (not in this phase’s plan)',
+      text: exercise.custom ? 'Your exercise' : 'Added (not in this block’s plan)',
     },
     label: '+',
     perSide,

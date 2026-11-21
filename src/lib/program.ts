@@ -1,16 +1,18 @@
 /**
- * The "Bulletproof Volleyball Program" (version 2): 12 weeks, 3 phases, 3 gym days
- * (Sunday lower, Monday upper, Tuesday resilience) around volleyball and football.
+ * The "Bulletproof Volleyball Program" (version 3, season plan): six 4-week blocks and a two-week
+ * taper from Sunday 1 Nov 2026 to the tournament around 16 May 2027. Three gym days: Sunday lower,
+ * Monday upper, Tuesday power and resilience, around volleyball and football.
  *
  * This is static plan content, not user data, so it lives in code rather than the database.
  * Logged sets refer to exercises by `id`. NEVER change an existing id: past logs would lose their
- * exercise. When a movement changes between phases (e.g. wall sit -> overloaded pull) it is a
+ * exercise. When a movement changes between blocks (e.g. wall sit -> pin squat push) it is a
  * separate exercise with its own id, so "last time" and progress charts compare like with like.
- * Exercises dropped from the plan stay in the library (see RETIRED_EXERCISES) so old logs still show.
+ * Exercises dropped from the plan stay in RETIRED_EXERCISES so old logs still show.
  */
-import type { Field, LegacySessionKey, SessionKey, SessionKind } from './types'
+import type { DateKey, Field, LegacySessionKey, SessionKey, SessionKind } from './types'
 
-export type Phase = 1 | 2 | 3
+/** Training block 1–6. The taper uses block 6 prescriptions at half the sets. */
+export type Block = 1 | 2 | 3 | 4 | 5 | 6
 export type { Field, SessionKey }
 
 export const FIELD_UNITS: Record<Field, string> = {
@@ -21,22 +23,24 @@ export const FIELD_UNITS: Record<Field, string> = {
   pain: '/10',
 }
 
-/** The prescription for one phase. */
+/** The prescription for one block. */
 export interface Rx {
   sets: number
   /** Target reps per set (used to pre-fill the log). */
   reps?: number
+  /** Different target reps per set, e.g. back squat 5, 4, 3, then 5 fast. Overrides `reps`. */
+  repsBySet?: number[]
   /** Target seconds per set (holds, isometrics). */
   seconds?: number
   /** Suggested starting weight. */
   kg?: number
   /** Exactly as written in the program, shown to you. */
   text: string
-  /** Log left and right separately, left first. Overrides the exercise default for this phase. */
+  /** Log left and right separately, left first. Overrides the exercise default for this block. */
   perSide?: boolean
-  /** Left out of deload weeks (4 and 8). */
+  /** Left out of deload weeks. */
   skipOnDeload?: boolean
-  /** A gentler start for the first weeks of the phase, e.g. Nordics 2 × 3 in weeks 1–2. */
+  /** A gentler start for the first weeks of the program, e.g. Nordics 2 × 3 in weeks 1–2. */
   easierThroughWeek?: { week: number; sets: number; reps: number }
 }
 
@@ -52,16 +56,19 @@ export interface Exercise {
   warmup?: boolean
   /** Created by you in the app (id 'custom-<uuid>'), not part of the program. */
   custom?: boolean
-  rx: Partial<Record<Phase, Rx>>
+  /** Prescription per block; no entry = not done in that block. */
+  rx: Partial<Record<Block, Rx>>
 }
 
 /** An exercise as it appears in a session. */
 export interface SessionItem {
   exercise: Exercise
-  /** Done straight after the previous exercise, same letter numbered on (seated calf raise "I", then "I2"). */
+  /** Done straight after the previous exercise, same letter numbered on ("I", then "I2"). */
   continuesPrevious?: boolean
-  /** Replaces the previous exercise in other phases (wall sit -> overloaded pull): same letter. */
+  /** Replaces the previous exercise in other blocks (wall sit -> pin squat push): same letter. */
   phaseAlternative?: boolean
+  /** Unlettered group on the program sheet, e.g. "Finisher" or "Hip flexors". */
+  group?: string
   /** Dropped on a scrimmage Sunday (the scrimmage is the jump session). */
   jumpBlock?: boolean
   /** One set fewer on a scrimmage Sunday. */
@@ -79,40 +86,63 @@ export interface SessionPlan {
   items: SessionItem[]
 }
 
-export const PROGRAM_WEEKS = 12
-export const DELOAD_WEEKS = [4, 8]
-export const TEST_WEEKS = [1, 4, 8, 12]
+// =====================================================================================
+// The season
+// =====================================================================================
+
+/** Sunday of week 1 (block 1 starts 1 Nov 2026). The app's start-date setting defaults to this. */
+export const SEASON_START: DateKey = '2026-11-01'
+export const TOURNAMENT_LABEL = 'Tournament around 16 May 2027'
 /** Program weeks start on Sunday (the first gym day). */
 export const PROGRAM_WEEK_STARTS_ON = 0
 
-export const PHASES: Record<Phase, { name: string; weeks: string; goal: string; lifting: string }> = {
-  1: {
-    name: 'Foundation',
-    weeks: '1–4',
-    goal: 'Settle knee pain, retrain the ankle, learn to land and approach',
-    lifting: '3–4 sets × 6–10 reps, RPE 7, 3-second lowering',
-  },
-  2: {
-    name: 'Strength–power',
-    weeks: '5–8',
-    goal: 'Heavier lifts, max isometrics, full approaches, depth drops',
-    lifting: '4–5 × 4–6, RPE 8',
-  },
-  3: {
-    name: 'Reactive peak',
-    weeks: '9–12',
-    goal: 'Convert strength to jump height with full intent',
-    lifting: '3–4 × 3–5, RPE 8, lift-then-jump pairs',
-  },
+export interface BlockInfo {
+  block: Block | 'taper'
+  name: string
+  focus: string
+  weeks: number
+  /** Week within the block (1-based) that is the deload + test week, if any. */
+  deloadWeek?: number
+  /** Week within the block with no gym: home routine only (Tết). */
+  homeWeek?: number
 }
 
-export const DELOAD_NOTE = 'Deload week: about 40% fewer sets, same weights, no depth jumps. Tests on Sunday.'
+/**
+ * Block lengths in weeks. If the tournament date moves, change block 6's length:
+ * the last two weeks are always the taper.
+ */
+export const SEASON: BlockInfo[] = [
+  { block: 1, name: 'Volume', focus: 'Higher reps, technique, ATG knee and ankle work, learn the hang clean', weeks: 4, deloadWeek: 4 },
+  { block: 2, name: 'Intensify', focus: 'Clean pulls and hang cleans, squats in sets of 5–6, contrast jumps', weeks: 4, deloadWeek: 4 },
+  { block: 3, name: 'Strength', focus: 'Heaviest squats (sets of 3), heavy clean pulls, eccentric accessories', weeks: 4, deloadWeek: 4 },
+  { block: 4, name: 'Power', focus: 'Heavy hang cleans, slow-lowering split squats, elastic accessories', weeks: 5, homeWeek: 3 },
+  { block: 5, name: 'Speed', focus: 'Light fast cleans, fast squats, more depth jumps, low plyos', weeks: 4, deloadWeek: 4 },
+  { block: 6, name: 'Peak', focus: 'Most approach and depth jumps, lighter lifting, easy Tuesdays', weeks: 5 },
+  { block: 'taper', name: 'Taper', focus: 'Volume cut by half, max-effort jumps only, stay fresh', weeks: 2 },
+]
+
+export const PROGRAM_WEEKS = SEASON.reduce((n, b) => n + b.weeks, 0) // 28
+
+export const DELOAD_NOTE = 'Deload week: about 40% fewer sets, same weights, no depth jumps. Test on Sunday.'
+export const HOME_WEEK_NOTE = 'Tết week: no gym, home routine only (the daily joint routine).'
+export const TAPER_NOTE = 'Taper: half the sets, max-effort jumps only, stay fresh for the tournament.'
 
 export const SCRIMMAGE_NOTE =
   'Scrimmage Sunday: the scrimmage is your jump session, so pogos, approach jumps and depth landings are dropped and D–H have one set fewer. Do them before the scrimmage if there are a few hours between, otherwise after. Legs dead afterwards? Move D–H to Tuesday and skip Tuesday’s session.'
 
-/** Same prescription in every phase. */
-const all = (rx: Rx): Partial<Record<Phase, Rx>> => ({ 1: rx, 2: rx, 3: rx })
+// ---------- prescription helpers ----------
+
+/** Same prescription in every block. */
+const all = (rx: Rx): Partial<Record<Block, Rx>> => ({ 1: rx, 2: rx, 3: rx, 4: rx, 5: rx, 6: rx })
+
+/** The program sheet's three columns: blocks 1–2, 3–4 and 5–6. `null` = not done in those blocks. */
+function cols(b12: Rx | null, b34: Rx | null, b56: Rx | null): Partial<Record<Block, Rx>> {
+  const out: Partial<Record<Block, Rx>> = {}
+  if (b12) out[1] = out[2] = b12
+  if (b34) out[3] = out[4] = b34
+  if (b56) out[5] = out[6] = b56
+  return out
+}
 
 // =====================================================================================
 // Exercise library. Ids are permanent.
@@ -120,19 +150,12 @@ const all = (rx: Rx): Partial<Record<Phase, Rx>> => ({ 1: rx, 2: rx, 3: rx })
 
 const EX = {
   // ---------- warm-ups ----------
-  jointRoutine: {
-    id: 'joint-routine',
-    name: 'Daily joint routine',
-    fields: [],
-    warmup: true,
-    cue: 'Backward walking 3 min · tibialis raise 1 × 20–25 · calf raise straight knee 1 × 15 each · calf raise bent knee 1 × 15 each · single-leg balance 2 × 30 s each · Patrick step 1 × 15 each · couch stretch + 90/90 switches. Left side first. If the knee is sore, stop the Patrick step at a shallower depth — don’t skip it.',
-    rx: all({ sets: 1, text: '12 min' }),
-  },
-  jointRoutineASkips: {
+  jointRoutineSunday: {
     id: 'joint-routine-askips',
-    name: 'Daily joint routine + A-skips, 2 × 20 m',
+    name: 'Daily joint routine + band ankle work + A-skips, 2 × 20 m + ATG split squat, 2 × 8 each, light',
     fields: [],
     warmup: true,
+    cue: 'The ATG split squat stays as knee-friendly range work. If the knee is sore, stop the Patrick step at a shallower depth — don’t skip it.',
     rx: all({ sets: 1, text: '15 min' }),
   },
   jointRoutineUpper: {
@@ -142,28 +165,39 @@ const EX = {
     warmup: true,
     rx: all({ sets: 1, text: '15 min' }),
   },
+  jointRoutineTuesday: {
+    id: 'joint-routine',
+    name: 'Daily joint routine + band ankle work + backward walking, 2 × 30 m',
+    fields: [],
+    warmup: true,
+    cue: 'Backward walking 3 min · tibialis raise 1 × 20–25 · calf raise straight knee 1 × 15 each · calf raise bent knee 1 × 15 each · single-leg balance 2 × 30 s each · Patrick step 1 × 15 each · couch stretch + 90/90 switches. Left side first.',
+    rx: all({ sets: 1, text: '15 min' }),
+  },
 
-  // ---------- jumps ----------
+  // ---------- Sunday: jumps ----------
   pogoHops: {
     id: 'pogo-hops',
     name: 'Pogo hops',
     fields: ['reps'],
-    cue: 'Stiff ankles, bounce off the balls of your feet, short ground contact. Left first. Only if the knee rule passed this week.',
-    rx: {
-      1: { sets: 3, reps: 10, text: '3 × 10, both legs, small' },
-      2: { sets: 3, reps: 15, text: '3 × 15 both legs + 2 × 8 each leg' },
-      3: { sets: 3, reps: 10, perSide: true, text: '3 × 10 each leg, fast' },
-    },
+    cue: 'Stiff ankles, short ground contact. Left first. Only if the knee rule passed this week.',
+    rx: cols(
+      { sets: 3, reps: 10, text: '3 × 10 both legs, small → 3 × 15' },
+      { sets: 3, reps: 15, text: '3 × 15 both legs + 2 × 8 each leg' },
+      { sets: 3, reps: 10, perSide: true, text: '3 × 10 each leg, fast' },
+    ),
   },
   approachJump: {
     id: 'approach-jump',
     name: 'Approach jump',
     fields: ['reps', 'cm'],
-    cue: 'On the indoor court if it’s free. Long fast penultimate step, plant heel first, both arms swing all the way back then drive up. Log your reach in cm if you mark it.',
+    cue: 'On the indoor court if it’s free. Long fast penultimate step, plant heel first, full arm swing. Log your reach in cm if you mark it.',
     rx: {
-      1: { sets: 3, reps: 3, text: '3 × 3, 2-step approach, technique' },
-      2: { sets: 4, reps: 3, text: '4 × 3, full 3–4 step approach, max' },
-      3: { sets: 5, reps: 2, text: '5 × 2, max, mark your reach' },
+      ...cols(
+        { sets: 3, reps: 3, text: '3 × 3, technique → 4 × 3, max' },
+        { sets: 4, reps: 3, text: '4 × 3, max' },
+        { sets: 5, reps: 2, text: '5 × 2, max, mark your reach' },
+      ),
+      6: { sets: 6, reps: 2, text: 'Up to 6 × 2, max, mark your reach' },
     },
   },
   dropLanding: {
@@ -171,123 +205,152 @@ const EX = {
     name: 'Drop landing',
     fields: ['reps', 'cm'],
     cue: 'Step off a bench or stacked plates; don’t jump off. Log the drop height.',
-    rx: { 1: { sets: 3, reps: 4, text: 'From 30 cm, 3 × 4, stick' } },
+    rx: cols({ sets: 3, reps: 4, text: 'From 30 cm, 3 × 4, stick' }, null, null),
   },
   dropJump: {
     id: 'drop-jump',
     name: 'Drop then jump',
     fields: ['reps', 'cm'],
     cue: 'Step off, don’t jump off. Log the drop height.',
-    rx: { 2: { sets: 3, reps: 4, skipOnDeload: true, text: 'From 30 cm, 3 × 4' } },
+    rx: cols(null, { sets: 3, reps: 4, skipOnDeload: true, text: 'From 30 cm, 3 × 4' }, null),
   },
   depthJump: {
     id: 'depth-jump',
     name: 'Depth jump',
     fields: ['reps', 'cm'],
     cue: 'Step off from 30–45 cm and spend as little time on the ground as possible. Log the drop height.',
-    rx: { 3: { sets: 4, reps: 3, text: 'From 30–45 cm, 4 × 3' } },
+    rx: cols(null, null, { sets: 4, reps: 3, skipOnDeload: true, text: 'From 30–45 cm, 4 × 3, minimal ground time' }),
   },
 
-  // ---------- lower strength ----------
-  deadlift: {
-    id: 'deadlift',
-    name: 'Barbell deadlift from the floor',
+  // ---------- Sunday: strength ----------
+  backSquat: {
+    id: 'back-squat',
+    name: 'Back squat, high bar',
     fields: ['kg', 'reps'],
-    cue: 'Push the floor away rather than leaning back. Weeks 9–12: after each set rest 90 s, then 2 max countermovement jumps.',
+    cue: 'Safety pins just below your bottom position. From block 2: after each set rest 90 s, then 2 max countermovement jumps. Knee flares? Squat only to a box or bench at a pain-free depth that week.',
     rx: {
-      1: { sets: 4, reps: 6, text: '4 × 6, RPE 7' },
-      2: { sets: 5, reps: 4, text: '5 × 4, RPE 8' },
-      3: { sets: 4, reps: 3, text: '4 × 3, RPE 8 + 2 jumps after each set' },
+      1: { sets: 4, reps: 6, text: '4 × 6–8 at RPE 7' },
+      2: { sets: 4, reps: 5, text: '4 × 5–6 at RPE 8, then 2 jumps after each set' },
+      3: { sets: 6, reps: 3, text: '6 × 3, heavy (RPE 8–9), then 2 jumps after each set' },
+      4: { sets: 5, reps: 3, text: '5 × 3, heavy, then 2 jumps after each set' },
+      5: { sets: 4, repsBySet: [5, 4, 3, 5], text: 'Sets of 5, 4, 3 building to about 85%, then 1 × 5 fast at 65–70%' },
+      6: { sets: 3, reps: 3, text: '3 × 3 at 75–80%, fast' },
     },
   },
   wallSit: {
     id: 'wall-sit',
     name: 'Isometric: wall sit at 60–70° knee bend',
     fields: ['sec'],
-    cue: 'Isometric holds often ease tendon pain for a few hours.',
+    cue: 'Isometric holds often ease tendon pain for a few hours. If the knee flares, do wall sits instead of pin pushes.',
     rx: { 1: { sets: 4, seconds: 45, text: '4 × 45 s' } },
   },
-  overloadedPull: {
-    id: 'overloaded-pull',
-    name: 'Isometric: overloaded barbell pull',
+  pinSquatPush: {
+    id: 'pin-squat-push',
+    name: 'Isometric: pin squat push',
     fields: ['sec', 'kg'],
-    cue: 'Load the bar heavier than you can lift, raise it on stacked plates so it sits just above your knees, then pull as hard as you can. It shouldn’t move.',
+    cue: 'A bar loaded heavier than you can lift rests on the safety pins at quarter-squat height; push up as hard as you can.',
     rx: {
-      2: { sets: 4, seconds: 5, text: '4 × 5 s max effort' },
-      3: { sets: 3, seconds: 5, text: '3 × 5 s' },
+      2: { sets: 4, seconds: 5, text: '4 × 5 s' },
+      3: { sets: 4, seconds: 5, text: '4 × 5 s max effort' },
+      4: { sets: 4, seconds: 5, text: '4 × 5 s max effort' },
+      5: { sets: 3, seconds: 5, text: '3 × 5 s' },
     },
   },
-  atgSplitSquat: {
-    id: 'atg-split-squat',
-    name: 'ATG split squat',
+  splitSquatThp: {
+    id: 'split-squat-thp',
+    name: 'Split squat, THP style (barbell or heavy DBs)',
     fields: ['kg', 'reps'],
     perSide: true,
-    cue: 'Front heel flat, knee travels past toes, back knee nearly touching the floor. Left leg first. If the knee flares, swap for a reverse lunge to a shorter range that week and keep the wall sits.',
+    cue: 'Front foot out in front, knee just past the toes, back thigh about parallel at the bottom. Left first. Knee flares? Reverse lunge to a shorter range that week.',
     rx: {
-      1: { sets: 3, reps: 8, kg: 0, text: '3 × 8 each, bodyweight or light DBs' },
-      2: { sets: 3, reps: 6, text: '3 × 6 each, heavier DBs' },
-      3: { sets: 3, reps: 5, text: '3 × 5 each, heavy' },
+      1: { sets: 3, reps: 8, text: '3 × 8 each' },
+      2: { sets: 3, reps: 6, text: '3 × 6 each, heavier' },
+      3: { sets: 4, reps: 5, text: '4 × 4–5 each, heavy' },
+      4: { sets: 3, reps: 3, text: 'Slow-lowering split squat, 3 × 3 each, heavier than you can lift, hands on the rack to help you up' },
+      5: { sets: 3, reps: 5, text: '3 × 5 each, moderate, fast up' },
+      6: { sets: 3, reps: 5, text: '3 × 5 each, moderate, fast up' },
     },
   },
   rdl: {
     id: 'rdl',
     name: 'Romanian deadlift',
     fields: ['kg', 'reps'],
-    cue: 'Barbell or dumbbells. 3-second lowering, stop when your hamstrings are fully stretched. Short on time? Cut to 2 sets.',
+    cue: 'Barbell. Stop when your hamstrings are fully stretched.',
     rx: {
       1: { sets: 3, reps: 8, text: '3 × 8' },
-      2: { sets: 3, reps: 6, text: '3 × 6' },
-      3: { sets: 2, reps: 5, text: '2 × 5' },
+      2: { sets: 3, reps: 6, text: '3 × 6, heavier' },
+      3: { sets: 3, reps: 5, text: '3 × 5, heavy' },
+      4: { sets: 2, reps: 6, text: 'Drop RDL, 2 × 5–6 (drop fast, stand up explosively)' },
+      5: { sets: 3, reps: 6, text: '3 × 6, slow, moderate' },
+      6: { sets: 3, reps: 6, text: '3 × 6, slow, moderate' },
     },
   },
   slCalfRaiseDb: {
     id: 'sl-calf-raise-db',
-    name: 'Single-leg calf raise, straight knee, holding a DB',
+    name: 'Calf raises: single-leg, straight knee, holding a DB',
     fields: ['kg', 'reps'],
     perSide: true,
     cue: 'On a plate or the box edge, full range. Left first; right does the same reps.',
-    rx: {
-      1: { sets: 3, reps: 12, text: '3 × 12 each' },
-      2: { sets: 3, reps: 10, text: '3 × 10 each, heavier' },
-      3: { sets: 3, reps: 8, text: '3 × 8 each, heavier' },
-    },
+    rx: cols({ sets: 4, reps: 12, text: '4 × 10–12 each' }, null, null),
+  },
+  calfRaise2Up1Down: {
+    id: 'calf-raise-2up-1down',
+    name: 'Calf raises: 2-up-1-down',
+    fields: ['kg', 'reps'],
+    perSide: true,
+    cue: 'Rise on two legs, lower on one over 3 s. On a plate or the box edge, full range.',
+    rx: { 3: { sets: 4, reps: 6, text: '4 × 6 each (rise on two legs, lower on one over 3 s)' } },
+  },
+  calfRaiseBouncing: {
+    id: 'calf-raise-bouncing-heavy',
+    name: 'Calf raises: bouncing, then heavy',
+    fields: ['kg', 'reps'],
+    cue: 'Bouncing calf raises first, then heavy sets.',
+    rx: { 4: { sets: 5, repsBySet: [6, 6, 8, 8, 8], text: 'Bouncing calf raises 2 × 6, then heavy 3 × 8' } },
+  },
+  calfRaiseSlow: {
+    id: 'calf-raise-slow',
+    name: 'Calf raises, slow',
+    fields: ['kg', 'reps'],
+    cue: 'On a plate or the box edge, full range.',
+    rx: cols(null, null, { sets: 3, reps: 10, text: '3 × 10, slow' }),
   },
 
-  // ---------- upper, rotation, arm swing ----------
+  // ---------- Monday: upper, rotation, arm swing ----------
   landminePunch: {
     id: 'landmine-rotational-punch',
     name: 'Landmine rotational punch',
     fields: ['reps'],
     perSide: true,
     cue: 'Stand side-on, bar end at your back hip in both hands. Drive the back hip through and punch the bar up and out, finishing on the ball of your back foot. Light: empty bar or one small plate. Every rep as fast as possible.',
-    rx: {
-      1: { sets: 3, reps: 5, text: '3 × 5 each side' },
-      2: { sets: 4, reps: 4, text: '4 × 4 each side' },
-      3: { sets: 5, reps: 3, text: '5 × 3 each side, max speed' },
-    },
+    rx: cols(
+      { sets: 3, reps: 5, text: '3 × 5 each side' },
+      { sets: 4, reps: 4, text: '4 × 4 each side' },
+      { sets: 5, reps: 3, text: '5 × 3 each side, max speed' },
+    ),
   },
   dbSnatch: {
     id: 'db-snatch',
     name: 'One-arm dumbbell snatch',
     fields: ['kg', 'reps'],
     perSide: true,
-    cue: 'Dip and drive from your legs and hips, let the dumbbell float up close to your body, and punch it overhead in one move. Legs to hips to arm: the same chain as a spike. Moderate weight; stop if the speed drops.',
-    rx: {
-      1: { sets: 3, reps: 4, text: '3 × 4 each arm' },
-      2: { sets: 4, reps: 3, text: '4 × 3 each arm' },
-      3: { sets: 4, reps: 3, text: '4 × 3 each arm, heavier' },
-    },
+    cue: 'Dip and drive from your legs and hips, let the dumbbell float up close to your body, and punch it overhead in one move. Moderate weight; stop if the speed drops.',
+    rx: cols(
+      { sets: 3, reps: 4, text: '3 × 4 each arm' },
+      { sets: 4, reps: 3, text: '4 × 3 each arm' },
+      { sets: 4, reps: 3, text: '4 × 3 each arm, heavier' },
+    ),
   },
   pullupOrPullover: {
     id: 'pullup-or-pullover',
     name: 'Pull-up, or DB pullover on a bench',
     fields: ['kg', 'reps'],
-    cue: 'Pullover: one DB in both hands, lower it behind your head until your lats stretch. Log 0 kg for bodyweight pull-ups.',
-    rx: {
-      1: { sets: 3, reps: 8, text: '3 × 8' },
-      2: { sets: 4, reps: 5, text: '4 × 5 (pullover 4 × 8)' },
-      3: { sets: 3, reps: 5, text: '3 × 4–5 (pullover 3 × 8)' },
-    },
+    cue: 'Pull-ups on the squat rack’s bar if it has one. Pullover: one DB in both hands, lower it behind your head until your lats stretch. Log 0 kg for bodyweight pull-ups.',
+    rx: cols(
+      { sets: 3, reps: 8, text: '3 × 8' },
+      { sets: 4, reps: 5, text: '4 × 5 (pullover 4 × 8)' },
+      { sets: 3, reps: 5, text: '3 × 4–5 (pullover 3 × 8)' },
+    ),
   },
   landminePress: {
     id: 'landmine-press',
@@ -295,43 +358,39 @@ const EX = {
     fields: ['kg', 'reps'],
     perSide: true,
     cue: 'Kneel on the side of the pressing arm, press up and slightly forward. Squeeze the glute of the down knee so your lower back doesn’t arch.',
-    rx: {
-      1: { sets: 3, reps: 8, text: '3 × 8 each' },
-      2: { sets: 4, reps: 6, text: '4 × 6 each' },
-      3: { sets: 3, reps: 5, text: '3 × 5 each' },
-    },
+    rx: cols(
+      { sets: 3, reps: 8, text: '3 × 8 each' },
+      { sets: 4, reps: 6, text: '4 × 6 each' },
+      { sets: 3, reps: 5, text: '3 × 5 each' },
+    ),
   },
   dbBench: {
     id: 'db-bench',
     name: 'Dumbbell bench press',
     fields: ['kg', 'reps'],
-    rx: {
-      1: { sets: 3, reps: 8, text: '3 × 8' },
-      2: { sets: 4, reps: 5, text: '4 × 5' },
-      3: { sets: 3, reps: 5, text: '3 × 5, then 3 clap or fast push-ups' },
-    },
+    rx: cols(
+      { sets: 3, reps: 8, text: '3 × 8' },
+      { sets: 4, reps: 5, text: '4 × 5' },
+      { sets: 3, reps: 5, text: '3 × 5, then 3 clap or fast push-ups' },
+    ),
   },
   dbRow: {
     id: 'db-row',
     name: 'Chest-supported DB row, or barbell bent-over row',
     fields: ['kg', 'reps'],
     cue: 'Chest on an incline bench if there is one.',
-    rx: {
-      1: { sets: 3, reps: 10, text: '3 × 10' },
-      2: { sets: 3, reps: 8, text: '3 × 8' },
-      3: { sets: 3, reps: 8, text: '3 × 8' },
-    },
+    rx: cols({ sets: 3, reps: 10, text: '3 × 10' }, { sets: 3, reps: 8, text: '3 × 8' }, { sets: 3, reps: 8, text: '3 × 8' }),
   },
   landmineRotation: {
     id: 'landmine-rotation',
     name: 'Landmine rotation (rainbow)',
     fields: ['kg', 'reps'],
     cue: 'Bar end at arm’s length overhead, swing it down to one hip, then the other, turning your hips and pivoting your back foot. Arms stay long; the hips lead, like the spike.',
-    rx: {
-      1: { sets: 3, reps: 8, text: '3 × 8 each side' },
-      2: { sets: 3, reps: 6, text: '3 × 6, faster' },
-      3: { sets: 3, reps: 6, text: '3 × 6, max speed' },
-    },
+    rx: cols(
+      { sets: 3, reps: 8, text: '3 × 8 each side' },
+      { sets: 3, reps: 6, text: '3 × 6, faster' },
+      { sets: 3, reps: 6, text: '3 × 6, max speed' },
+    ),
   },
   externalRotation: {
     id: 'external-rotation',
@@ -339,11 +398,7 @@ const EX = {
     fields: ['kg', 'reps'],
     perSide: true,
     cue: '2–5 kg. Elbow pinned to your side, slow lowering. Hitting arm especially.',
-    rx: {
-      1: { sets: 3, reps: 12, text: '3 × 12–15' },
-      2: { sets: 3, reps: 12, text: '3 × 12' },
-      3: { sets: 3, reps: 12, text: '3 × 12' },
-    },
+    rx: cols({ sets: 3, reps: 12, text: '3 × 12–15' }, { sets: 3, reps: 12, text: '3 × 12' }, { sets: 3, reps: 12, text: '3 × 12' }),
   },
   proneYT: {
     id: 'prone-yt-raise',
@@ -357,210 +412,304 @@ const EX = {
     name: 'Plank DB pull-through',
     fields: ['reps'],
     cue: 'In a push-up plank, drag a DB under your body without letting the hips twist. Pallof press instead if the cable is free.',
-    rx: {
-      1: { sets: 3, reps: 8, text: '3 × 8 each side' },
-      2: { sets: 3, reps: 10, text: '3 × 10 each' },
-      3: { sets: 3, reps: 10, text: '3 × 10 each' },
-    },
+    rx: cols(
+      { sets: 3, reps: 8, text: '3 × 8 each side' },
+      { sets: 3, reps: 10, text: '3 × 10 each' },
+      { sets: 3, reps: 10, text: '3 × 10 each' },
+    ),
   },
   lateralRaise: {
     id: 'upper-lateral-raise',
-    name: 'Finisher: lateral raise',
+    name: 'Lateral raise',
     fields: ['kg', 'reps'],
-    cue: 'Muscle finisher, RPE 8. Keeps the muscle from your hypertrophy year.',
+    cue: 'RPE 8. Keeps the muscle from your hypertrophy year.',
     rx: all({ sets: 3, reps: 15, text: '3 × 15, RPE 8' }),
   },
   curls: {
     id: 'upper-curls',
-    name: 'Finisher: dumbbell curls',
+    name: 'Dumbbell curls',
     fields: ['kg', 'reps'],
     rx: all({ sets: 2, reps: 12, text: '2 × 12, RPE 8' }),
   },
   triceps: {
     id: 'upper-triceps',
-    name: 'Finisher: overhead triceps extension',
+    name: 'Overhead triceps extension',
     fields: ['kg', 'reps'],
     rx: all({ sets: 2, reps: 12, text: '2 × 12, RPE 8' }),
   },
 
-  // ---------- ankle, knee, ATG resilience ----------
+  // ---------- Tuesday: power ----------
+  cleanPull: {
+    id: 'clean-pull',
+    name: 'Clean pull',
+    fields: ['kg', 'reps'],
+    cue: 'From just above the knees, explode up onto your toes and shrug; no catch. Easier to learn than the clean, and it builds the same drive.',
+    rx: {
+      2: { sets: 4, reps: 3, text: '4 × 3 at about 90% of your hang clean' },
+      3: { sets: 4, reps: 3, text: '4 × 3 at 105–110% of your hang clean' },
+      4: { sets: 3, reps: 3, text: '3 × 3' },
+    },
+  },
+  hangPowerClean: {
+    id: 'hang-power-clean',
+    name: 'Hang power clean',
+    fields: ['kg', 'reps'],
+    cue: 'Catch in a quarter squat. Film one set a week. Lower under control; don’t drop rubber plates.',
+    rx: {
+      1: { sets: 4, reps: 3, text: '4 × 3, light, technique' },
+      2: { sets: 4, reps: 3, text: '4 × 3 at 75–85%' },
+      3: { sets: 3, reps: 2, text: '3 × 2' },
+      4: { sets: 5, reps: 2, text: '5 × 2, heavy' },
+      5: { sets: 5, reps: 2, text: '5 × 2 at 60–70%, fast' },
+      6: { sets: 3, reps: 2, text: '3 × 2, light' },
+    },
+  },
+  jumpSquat: {
+    id: 'barbell-jump-squat',
+    name: 'Barbell jump squat',
+    fields: ['kg', 'reps'],
+    cue: 'Max height every rep, land softly, reset.',
+    rx: {
+      ...cols(
+        { sets: 3, reps: 3, text: '3 × 3, empty bar → about 20% of your squat' },
+        { sets: 4, reps: 3, text: '4 × 3, 20–30% of your squat' },
+        null,
+      ),
+      5: { sets: 4, reps: 3, text: '4 × 3, fast' },
+    },
+  },
+
+  // ---------- Tuesday: resilience ----------
   lineHopStick: {
     id: 'line-hop-stick',
-    name: 'Lateral hop and stick: line hop',
+    name: 'Lateral hop and stick: line hop → skater bound',
     fields: ['reps'],
     perSide: true,
-    cue: 'Hold every landing for 2 s. Control work for the left ankle, not power.',
-    rx: { 1: { sets: 3, reps: 5, text: 'Line hop, 3 × 5 each way' } },
+    cue: 'Hold every landing for 2 s. Ankle maintenance.',
+    rx: cols({ sets: 2, reps: 5, text: 'Line hop → skater bound and stick, 2 × 5 each' }, null, null),
   },
   skaterBoundStick: {
     id: 'skater-bound-stick',
     name: 'Lateral hop and stick: skater bound',
     fields: ['reps'],
     perSide: true,
-    cue: 'Hold every landing for 2 s. Control work for the left ankle, not power.',
-    rx: {
-      2: { sets: 3, reps: 5, text: 'Skater bound and stick, 3 × 5 each' },
-      3: { sets: 3, reps: 6, text: 'Skater bound and stick, 3 × 6 each, longer' },
-    },
-  },
-  backwardRunning: {
-    id: 'backward-running',
-    name: 'Backward running, or backward walking on an inclined treadmill',
-    fields: [],
-    cue: 'Classic ATG knee work; strengthens the quads with little knee stress.',
-    rx: {
-      1: { sets: 4, text: '4 × 30 m' },
-      2: { sets: 4, text: '4 × 40 m' },
-      3: { sets: 4, text: '4 × 40 m, faster' },
-    },
-  },
-  gobletSquat: {
-    id: 'heel-elevated-goblet-squat',
-    name: 'Heel-elevated goblet squat',
-    fields: ['kg', 'reps'],
-    cue: 'Heels on plates, knees fully forward. RPE 7.',
-    rx: {
-      1: { sets: 3, reps: 10, text: '3 × 10, 3-second lowering' },
-      2: { sets: 3, reps: 8, text: '3 × 8, heavier' },
-      3: { sets: 3, reps: 6, text: '3 × 6' },
-    },
-  },
-  reverseNordic: {
-    id: 'reverse-nordic',
-    name: 'Reverse Nordic',
-    fields: ['reps'],
-    cue: 'Kneel, lean back with a straight line from knees to head. Only as far as comfortable.',
-    rx: {
-      1: { sets: 3, reps: 6, text: '3 × 6, partial range' },
-      2: { sets: 3, reps: 8, text: '3 × 8' },
-      3: { sets: 3, reps: 8, text: '3 × 8, deeper' },
-    },
+    cue: 'Hold every landing for 2 s. Ankle maintenance.',
+    rx: cols(null, { sets: 2, reps: 6, text: 'Skater bound and stick, 2 × 6 each, longer' }, { sets: 2, reps: 5, text: '2 × 5 each' }),
   },
   nordicCurl: {
     id: 'nordic-curl',
     name: 'Nordic hamstring curl, lowering only',
     fields: ['reps'],
-    cue: 'Feet anchored by a partner, or under a heavily loaded barbell padded with a towel. Catch yourself with your hands early. Expect sore hamstrings the first time.',
+    cue: 'Feet anchored by a partner, or under a heavily loaded barbell padded with a towel. Catch yourself with your hands early.',
     rx: {
-      1: { sets: 3, reps: 4, easierThroughWeek: { week: 2, sets: 2, reps: 3 }, text: '2 × 3 in weeks 1–2, then 3 × 4' },
-      2: { sets: 3, reps: 5, text: '3 × 5' },
-      3: { sets: 3, reps: 6, text: '3 × 6' },
+      ...cols(
+        { sets: 3, reps: 5, easierThroughWeek: { week: 2, sets: 2, reps: 3 }, text: 'Start at 2 × 3, build to 3 × 5' },
+        null,
+        { sets: 2, reps: 4, text: '2 × 4, maintenance' },
+      ),
+      3: { sets: 3, reps: 6, text: '3 × 6 (the eccentric block)' },
+      4: { sets: 2, reps: 5, text: '2 × 5' },
     },
+  },
+  hipThrust: {
+    id: 'barbell-hip-thrust',
+    name: 'Barbell hip thrust',
+    fields: ['kg', 'reps'],
+    cue: 'Upper back on a bench, bar over your hips with a pad. Squeeze hard at the top.',
+    rx: cols(
+      { sets: 3, reps: 10, text: '3 × 8–10' },
+      { sets: 4, reps: 6, text: '4 × 6, heavier' },
+      { sets: 3, reps: 6, text: '3 × 6, fast up' },
+    ),
+  },
+  reverseNordic: {
+    id: 'reverse-nordic',
+    name: 'Reverse Nordic',
+    fields: ['reps'],
+    cue: 'Kneel, lean back with a straight line from knees to head.',
+    rx: cols(
+      { sets: 2, reps: 8, text: '2 × 8, partial range' },
+      { sets: 2, reps: 8, text: '2 × 8' },
+      { sets: 2, reps: 8, text: '2 × 8, deeper' },
+    ),
   },
   copenhagen: {
     id: 'copenhagen-plank',
     name: 'Copenhagen side plank',
     fields: ['sec'],
     perSide: true,
-    cue: 'Inner thigh strength for cutting in football and landing stability.',
-    rx: {
-      1: { sets: 2, seconds: 20, text: '2 × 20 s each, knee version' },
-      2: { sets: 3, seconds: 25, text: '3 × 25 s each' },
-      3: { sets: 3, seconds: 20, text: '3 × 20 s each, full lever' },
-    },
-  },
-  jeffersonCurl: {
-    id: 'jefferson-curl',
-    name: 'Jefferson curl',
-    fields: ['kg', 'reps'],
-    cue: 'Stand on the wooden box or a bench, roll down one vertebra at a time. Very light: this is for range.',
-    rx: {
-      1: { sets: 2, reps: 8, kg: 5, text: '2 × 8, empty bar or 5 kg' },
-      2: { sets: 2, reps: 8, kg: 10, text: '2 × 8, 10 kg' },
-      3: { sets: 2, reps: 8, kg: 15, text: '2 × 8, 15 kg' },
-    },
-  },
-  tibialisLoaded: {
-    id: 'tibialis-raise-loaded',
-    name: 'Tibialis raise, loaded',
-    fields: ['kg', 'reps'],
-    cue: 'Sit on the box edge with a DB held between your feet.',
-    rx: {
-      1: { sets: 3, reps: 15, text: '3 × 15' },
-      2: { sets: 3, reps: 15, text: '3 × 15, heavier' },
-      3: { sets: 3, reps: 15, text: '3 × 15, heavier' },
-    },
-  },
-  seatedCalfRaise: {
-    id: 'seated-calf-raise',
-    name: 'Seated calf raise',
-    fields: ['kg', 'reps'],
-    cue: 'DBs on your knees, toes on a plate. Then go straight into single-leg calf raises to failure.',
-    rx: {
-      1: { sets: 3, reps: 15, text: '3 × 15' },
-      2: { sets: 3, reps: 12, text: '3 × 12' },
-      3: { sets: 3, reps: 10, text: '3 × 10' },
-    },
+    cue: 'Inner thigh strength for football and landings.',
+    rx: cols(
+      { sets: 2, seconds: 20, text: '2 × 20 s each, knee version → 3 × 25 s' },
+      { sets: 3, seconds: 20, text: '3 × 20 s each, full lever' },
+      { sets: 2, seconds: 20, text: '2 × 20 s each' },
+    ),
   },
   slCalfRaiseFailure: {
     id: 'sl-calf-raise-failure',
-    name: 'Then: single-leg calf raise to failure',
+    name: 'Single-leg calf raise to failure',
     fields: ['reps'],
     perSide: true,
-    cue: 'Log the reps. The left should catch up to the right.',
+    cue: 'Log the reps; the left should keep up with the right.',
     rx: all({ sets: 1, text: '1 set each leg' }),
   },
-  armSwingDrill: {
-    id: 'arm-swing-drill',
-    name: 'Arm swing drill, no jump',
+  pikeLift: {
+    id: 'seated-pike-lift',
+    name: 'Seated pike lift (ATG psoas lift)',
     fields: ['reps'],
-    cue: 'Step into your approach plant, swing both arms all the way back, then drive them up hard while rising onto your toes.',
-    rx: all({ sets: 2, reps: 10, text: '2 × 10' }),
+    cue: 'Sit with legs straight, hands beside your knees, lift both heels off the floor and hold 1 s. Bend your knees slightly if you can’t lift at first.',
+    rx: all({ sets: 3, reps: 10, text: '3 × 10' }),
+  },
+  kneeRaise: {
+    id: 'hanging-knee-raise',
+    name: 'Hanging knee raise, or lying leg raise',
+    fields: ['reps'],
+    cue: 'Knees to chest, controlled. Hang from the squat rack’s bar if it has one.',
+    rx: all({ sets: 3, reps: 12, text: '3 × 10–12' }),
+  },
+  standingMarch: {
+    id: 'standing-march',
+    name: 'Band or ankle-weight standing march',
+    fields: ['reps'],
+    perSide: true,
+    cue: 'Stand tall, drive your knee above hip height. Left leg first.',
+    rx: all({ sets: 2, reps: 10, text: '2 × 10 each' }),
+  },
+  inclineDbPress: {
+    id: 'upper-incline-db-press',
+    name: 'Incline dumbbell press',
+    fields: ['kg', 'reps'],
+    cue: 'Pair with the one-arm row: back to back, rest 60–90 s, stop 1–2 reps short of failure.',
+    rx: all({ sets: 3, reps: 10, text: '3 × 8–12' }),
+  },
+  oneArmRow: {
+    id: 'one-arm-db-row',
+    name: 'One-arm dumbbell row',
+    fields: ['kg', 'reps'],
+    perSide: true,
+    rx: all({ sets: 3, reps: 10, text: '3 × 8–12' }),
+  },
+  rearDeltFly: {
+    id: 'rear-delt-fly',
+    name: 'Bent-over rear delt fly',
+    fields: ['kg', 'reps'],
+    rx: all({ sets: 3, reps: 15, text: '3 × 15' }),
+  },
+  skullCrusher: {
+    id: 'db-skull-crusher',
+    name: 'Dumbbell skull crusher',
+    fields: ['kg', 'reps'],
+    rx: all({ sets: 2, reps: 12, text: '2 × 12' }),
+  },
+  jeffersonCurl: {
+    id: 'jefferson-curl',
+    name: 'Jefferson curl (optional extra)',
+    fields: ['kg', 'reps'],
+    cue: 'Only if you have time. Stand on the wooden box or a bench, roll down one vertebra at a time. Very light: this is for range.',
+    rx: all({ sets: 2, reps: 8, text: '2 × 8, light — optional' }),
   },
 } satisfies Record<string, Exercise>
 
+/** Version 1/2 prescriptions mapped onto blocks (old phase 1 -> blocks 1–2, 2 -> 3–4, 3 -> 5–6). */
+const phases = cols
+
 /**
- * Exercises from the first version of the program that version 2 dropped. Kept so old sessions,
- * "last time" and charts still show them, and so you can still add them to a session by hand.
+ * Exercises from earlier versions that the season plan dropped. Kept so old sessions, "last time"
+ * and charts still show them, and so you can still add them to a session by hand.
  */
 export const RETIRED_EXERCISES: Exercise[] = [
+  {
+    id: 'deadlift',
+    name: 'Barbell deadlift from the floor',
+    fields: ['kg', 'reps'],
+    cue: 'Push the floor away rather than leaning back. (Replaced by the back squat in the season plan.)',
+    rx: phases({ sets: 4, reps: 6, text: '4 × 6, RPE 7' }, { sets: 5, reps: 4, text: '5 × 4, RPE 8' }, { sets: 4, reps: 3, text: '4 × 3, RPE 8' }),
+  },
+  {
+    id: 'overloaded-pull',
+    name: 'Isometric: overloaded barbell pull',
+    fields: ['sec', 'kg'],
+    rx: phases(null, { sets: 4, seconds: 5, text: '4 × 5 s max effort' }, { sets: 3, seconds: 5, text: '3 × 5 s' }),
+  },
+  {
+    id: 'atg-split-squat',
+    name: 'ATG split squat',
+    fields: ['kg', 'reps'],
+    perSide: true,
+    cue: 'Now part of the Sunday warm-up (2 × 8 each, light).',
+    rx: phases({ sets: 3, reps: 8, kg: 0, text: '3 × 8 each' }, { sets: 3, reps: 6, text: '3 × 6 each' }, { sets: 3, reps: 5, text: '3 × 5 each' }),
+  },
+  {
+    id: 'backward-running',
+    name: 'Backward running, or backward walking on an inclined treadmill',
+    fields: [],
+    cue: 'Now part of the Tuesday warm-up.',
+    rx: all({ sets: 4, text: '4 × 30–40 m' }),
+  },
+  {
+    id: 'heel-elevated-goblet-squat',
+    name: 'Heel-elevated goblet squat',
+    fields: ['kg', 'reps'],
+    rx: phases({ sets: 3, reps: 10, text: '3 × 10' }, { sets: 3, reps: 8, text: '3 × 8' }, { sets: 3, reps: 6, text: '3 × 6' }),
+  },
+  {
+    id: 'tibialis-raise-loaded',
+    name: 'Tibialis raise, loaded',
+    fields: ['kg', 'reps'],
+    cue: 'Tib raises are now in the daily routine.',
+    rx: all({ sets: 3, reps: 15, text: '3 × 15' }),
+  },
+  {
+    id: 'seated-calf-raise',
+    name: 'Seated calf raise',
+    fields: ['kg', 'reps'],
+    rx: phases({ sets: 3, reps: 15, text: '3 × 15' }, { sets: 3, reps: 12, text: '3 × 12' }, { sets: 3, reps: 10, text: '3 × 10' }),
+  },
+  {
+    id: 'arm-swing-drill',
+    name: 'Arm swing drill, no jump',
+    fields: ['reps'],
+    rx: all({ sets: 2, reps: 10, text: '2 × 10' }),
+  },
   {
     id: 'box-jump',
     name: 'Box jump onto the wooden box, step down',
     fields: ['reps', 'cm'],
     cue: 'Land softly in the same position you take off. Step down, never jump down. Log the box height.',
-    rx: {
-      1: { sets: 4, reps: 3, text: '4 × 3, stick 2 s' },
-      2: { sets: 4, reps: 3, text: '4 × 3, max height' },
-      3: { sets: 3, reps: 3, text: '3 × 3' },
-    },
+    rx: phases({ sets: 4, reps: 3, text: '4 × 3, stick 2 s' }, { sets: 4, reps: 3, text: '4 × 3, max height' }, { sets: 3, reps: 3, text: '3 × 3' }),
   },
   {
     id: 'db-jump',
     name: 'Dumbbell jump',
     fields: ['kg', 'reps'],
     cue: 'Arms hang straight; jump as high as you can. Land softly, reset each rep.',
-    rx: {
-      2: { sets: 4, reps: 3, kg: 5, text: '4 × 3, a light DB in each hand (5–10 kg)' },
-      3: { sets: 4, reps: 3, text: '4 × 3, light, max speed' },
-    },
+    rx: phases(null, { sets: 4, reps: 3, kg: 5, text: '4 × 3, light DBs (5–10 kg)' }, { sets: 4, reps: 3, text: '4 × 3, light, max speed' }),
   },
   {
     id: 'continuous-skater-bounds',
     name: 'Continuous skater bounds',
     fields: ['reps'],
-    rx: { 3: { sets: 3, reps: 6, text: '3 × 6' } },
+    rx: phases(null, null, { sets: 3, reps: 6, text: '3 × 6' }),
   },
   {
     id: 'rotational-scoop-throw',
     name: 'Rotational scoop throw into a wall, basketball',
     fields: ['reps'],
     perSide: true,
-    cue: 'Turn from your back hip and let the arms follow. Throw as fast as you can, not as hard. (Now optional at Wednesday’s court session: 3 × 5 each side.)',
+    cue: 'Optional at Wednesday’s court session: 3 × 5 each side.',
     rx: all({ sets: 3, reps: 5, text: '3 × 5 each side' }),
   },
   {
     id: 'overhead-slam',
     name: 'Overhead slam or soccer throw',
     fields: ['reps'],
-    cue: 'Reach back into a big stretch, then whip forward and down hard.',
     rx: all({ sets: 3, reps: 5, text: '3 × 5' }),
   },
   {
     id: 'track-running',
     name: 'Track running',
     fields: [],
-    cue: 'Dropped in version 2: football gives you that running.',
+    cue: 'Dropped: football gives you that running.',
     rx: all({ sets: 6, text: 'Tempo runs or accelerations' }),
   },
   {
@@ -576,12 +725,6 @@ export const RETIRED_EXERCISES: Exercise[] = [
     fields: ['kg', 'reps'],
     rx: all({ sets: 3, reps: 10, text: '3 × 10' }),
   },
-  {
-    id: 'upper-incline-db-press',
-    name: 'Upper: incline DB press',
-    fields: ['kg', 'reps'],
-    rx: all({ sets: 3, reps: 10, text: '3 × 10' }),
-  },
 ]
 
 // =====================================================================================
@@ -594,20 +737,23 @@ const LOWER: SessionPlan = {
   title: 'Lower A — jumps and strength',
   goal: 'Max-intent jumps, heavy legs, knee-over-toe strength',
   minutes: '85 min',
-  note: 'Your one big leg day: jumps first while you’re fresh, then heavy strength.',
+  note: 'Your one big leg day: jumps first while you’re fresh, then the heavy back squat, with Romanian deadlifts covering the hip hinge.',
   items: [
-    { exercise: EX.jointRoutineASkips },
+    { exercise: EX.jointRoutineSunday },
     { exercise: EX.pogoHops, jumpBlock: true },
     { exercise: EX.approachJump, jumpBlock: true },
     { exercise: EX.dropLanding, jumpBlock: true },
     { exercise: EX.dropJump, jumpBlock: true, phaseAlternative: true },
     { exercise: EX.depthJump, jumpBlock: true, phaseAlternative: true },
-    { exercise: EX.deadlift, fewerOnScrimmage: true },
+    { exercise: EX.backSquat, fewerOnScrimmage: true },
     { exercise: EX.wallSit, fewerOnScrimmage: true },
-    { exercise: EX.overloadedPull, fewerOnScrimmage: true, phaseAlternative: true },
-    { exercise: EX.atgSplitSquat, fewerOnScrimmage: true },
+    { exercise: EX.pinSquatPush, fewerOnScrimmage: true, phaseAlternative: true },
+    { exercise: EX.splitSquatThp, fewerOnScrimmage: true },
     { exercise: EX.rdl, fewerOnScrimmage: true },
     { exercise: EX.slCalfRaiseDb, fewerOnScrimmage: true },
+    { exercise: EX.calfRaise2Up1Down, fewerOnScrimmage: true, phaseAlternative: true },
+    { exercise: EX.calfRaiseBouncing, fewerOnScrimmage: true, phaseAlternative: true },
+    { exercise: EX.calfRaiseSlow, fewerOnScrimmage: true, phaseAlternative: true },
   ],
 }
 
@@ -629,33 +775,41 @@ const UPPER: SessionPlan = {
     { exercise: EX.externalRotation },
     { exercise: EX.proneYT },
     { exercise: EX.plankPullThrough },
-    { exercise: EX.lateralRaise },
-    { exercise: EX.curls },
-    { exercise: EX.triceps },
+    { exercise: EX.lateralRaise, group: 'Finisher' },
+    { exercise: EX.curls, group: 'Finisher' },
+    { exercise: EX.triceps, group: 'Finisher' },
   ],
 }
 
 const RESILIENCE: SessionPlan = {
   key: 'resilience',
   weekday: 2,
-  title: 'Ankle, knee and ATG resilience',
-  goal: 'Ankle stability, knee-over-toe strength, hamstrings. No jumping',
-  minutes: '55 min',
-  note: 'Slow and controlled, no jumping for height, so it won’t take anything away from Wednesday.',
+  title: 'Power and resilience',
+  goal: 'Light power (hang clean, jump squats), hamstrings, hip flexors, ankle maintenance, plus a 20-min upper finisher',
+  minutes: '70 min',
+  note: 'A few fast, max-intent reps with long rests, then hamstring, hip flexor, knee and ankle work. Block 6: a recovery day — keep everything light and skip the upper finisher if you feel flat.',
   items: [
-    { exercise: EX.jointRoutine },
+    { exercise: EX.jointRoutineTuesday },
+    { exercise: EX.cleanPull },
+    { exercise: EX.hangPowerClean },
+    { exercise: EX.jumpSquat },
     { exercise: EX.lineHopStick },
     { exercise: EX.skaterBoundStick, phaseAlternative: true },
-    { exercise: EX.backwardRunning },
-    { exercise: EX.gobletSquat },
-    { exercise: EX.reverseNordic },
     { exercise: EX.nordicCurl },
+    { exercise: EX.hipThrust },
+    { exercise: EX.reverseNordic },
     { exercise: EX.copenhagen },
-    { exercise: EX.jeffersonCurl },
-    { exercise: EX.tibialisLoaded },
-    { exercise: EX.seatedCalfRaise },
-    { exercise: EX.slCalfRaiseFailure, continuesPrevious: true },
-    { exercise: EX.armSwingDrill },
+    { exercise: EX.slCalfRaiseFailure },
+    { exercise: EX.pikeLift, group: 'Hip flexors' },
+    { exercise: EX.kneeRaise, group: 'Hip flexors' },
+    { exercise: EX.standingMarch, group: 'Hip flexors' },
+    { exercise: EX.inclineDbPress, group: 'Upper finisher' },
+    { exercise: EX.oneArmRow, group: 'Upper finisher' },
+    { exercise: EX.lateralRaise, group: 'Upper finisher' },
+    { exercise: EX.rearDeltFly, group: 'Upper finisher' },
+    { exercise: EX.curls, group: 'Upper finisher' },
+    { exercise: EX.skullCrusher, group: 'Upper finisher' },
+    { exercise: EX.jeffersonCurl, group: 'Optional' },
   ],
 }
 
@@ -691,10 +845,13 @@ export const OTHER_DAYS: Record<number, { title: string; goal: string }> = {
   },
   4: { title: 'Football (evening)', goal: 'Daily joint routine as warm-up. Wear the ankle brace or tape.' },
   5: { title: 'Volleyball training', goal: 'Daily joint routine as warm-up. Wear the ankle brace or tape.' },
-  6: { title: 'At your parents’', goal: 'Optional 10-min daily joint routine at home: backward walking, tib raises against a wall, calf raises on a step, single-leg balance, couch stretch.' },
+  6: {
+    title: 'At your parents’',
+    goal: 'Optional 10-min daily joint routine at home: backward walking, tib raises against a wall, calf raises on a step, single-leg balance, couch stretch.',
+  },
 }
 
-// ---------- Tests: Sunday of weeks 1, 4, 8 and 12, after the warm-up ----------
+// ---------- Tests: Sunday of each deload week (the end of every block), after the warm-up ----------
 
 export const TESTS: Exercise[] = [
   {
@@ -747,14 +904,14 @@ export const TESTS: Exercise[] = [
     id: 'test-knee-pain',
     name: 'Knee pain during a slow single-leg step-down',
     fields: ['pain'],
-    cue: 'Right knee, 0–10. Aim: falling to 0–2. (Deadlift: your best set of 3 at RPE 8 is read from the Sunday log.)',
+    cue: 'Right knee, 0–10. Aim: falling to 0–2. (Back squat: your best set of 3 at RPE 8 is read from the Sunday log.)',
     rx: all({ sets: 1, text: '0–10' }),
   },
 ]
 
 export const KNEE_RULE = {
   limit: 3,
-  text: 'Pain up to 3/10 during exercise is fine if it settles by the next morning and isn’t creeping up week to week. Above 3/10, or worse the next morning: cut that exercise’s range or load, halve the next jump session, and lean on wall sits (5 × 45 s) until it settles. Two bad weeks in a row: drop all depth work and pogos and stay in phase 1 loading.',
+  text: 'Pain up to 3/10 during exercise is fine if it settles by the next morning and isn’t creeping up week to week. Above 3/10, or worse the next morning: cut that exercise’s range or load, halve the next jump session, and lean on wall sits (5 × 45 s) until it settles. Two bad weeks in a row: drop all depth work and pogos and go back to block 1 loading.',
   seePhysio:
     'See a sports physio or doctor if the knee swells, locks, gives way, hurts sharply or at night, or isn’t clearly improving after 3–4 weeks.',
 }

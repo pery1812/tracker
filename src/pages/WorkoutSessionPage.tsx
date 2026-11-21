@@ -7,8 +7,8 @@ import { useToday } from '../hooks/useToday'
 import { useCustomExercises, useProgramSettings, useWorkoutHistory, useWorkoutSession } from '../hooks/useWorkouts'
 import { addDays, formatShortDate } from '../lib/dates'
 import { makeExerciseLookup, plannedExtra } from '../lib/exercises'
-import { DELOAD_NOTE, FIELD_UNITS, PHASES, SCRIMMAGE_NOTE, SESSIONS, isProgramSession, sessionTitle, type Field } from '../lib/program'
-import { isDeloadWeek, isTestWeek, phaseForWeek, planSession, programWeek, type PlannedExercise } from '../lib/schedule'
+import { DELOAD_NOTE, FIELD_UNITS, SCRIMMAGE_NOTE, SESSIONS, TAPER_NOTE, isProgramSession, sessionTitle, type Field } from '../lib/program'
+import { blockTitle, planSession, programWeek, weekInfo, type PlannedExercise } from '../lib/schedule'
 import { describeSets, formatSet, suggestIncrease } from '../lib/stats'
 import type { DateKey, Side, WorkoutSet, WorkoutSetInput } from '../lib/types'
 
@@ -40,7 +40,7 @@ export function WorkoutSessionPage() {
   }
 
   const week = settings ? programWeek(settings.startDate, session.date) : 1
-  const phase = phaseForWeek(week)
+  const w = weekInfo(week)
   const kind = session.sessionKind
   const isProgram = isProgramSession(kind)
   const plan = isProgram ? planSession(kind, week, { scrimmage: session.scrimmage }) : []
@@ -81,16 +81,18 @@ export function WorkoutSessionPage() {
       </Link>
       <header className="mb-4">
         <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-          {formatShortDate(session.date)} · Week {week} · Phase {phase} {PHASES[phase].name}
+          {formatShortDate(session.date)} · Week {week} · {blockTitle(w)}
         </p>
         <h1 className="text-3xl font-bold tracking-tight">{sessionTitle(kind)}</h1>
         <div className="mt-2 flex flex-wrap gap-2">
-          {isProgram && isDeloadWeek(week) && <Badge tone="sky">Deload</Badge>}
-          {kind === 'lower' && isTestWeek(week) && <Badge tone="violet">Test day</Badge>}
+          {isProgram && w.deload && <Badge tone="sky">Deload</Badge>}
+          {kind === 'lower' && w.test && <Badge tone="violet">Test day</Badge>}
+          {isProgram && w.taper && <Badge tone="emerald">Taper</Badge>}
           {session.scrimmage && <Badge tone="emerald">Scrimmage</Badge>}
         </div>
         {isProgram && SESSIONS[kind].note && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{SESSIONS[kind].note}</p>}
-        {isProgram && isDeloadWeek(week) && <p className="mt-2 text-sm text-sky-800 dark:text-sky-200">{DELOAD_NOTE}</p>}
+        {isProgram && w.deload && <p className="mt-2 text-sm text-sky-800 dark:text-sky-200">{DELOAD_NOTE}</p>}
+        {isProgram && w.taper && <p className="mt-2 text-sm text-emerald-800 dark:text-emerald-200">{TAPER_NOTE}</p>}
         {kind === 'lower' && (
           <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-3 rounded-xl bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
             <input
@@ -119,7 +121,7 @@ export function WorkoutSessionPage() {
               sessionId={session.id}
               sets={sets.filter((s) => s.exerciseId === p.exercise.id)}
               last={lastTime(p.exercise.id)}
-              holdWeights={isDeloadWeek(week)}
+              holdWeights={w.deload || w.taper}
               onAdd={addSet}
               onDelete={deleteSet}
             />
@@ -134,7 +136,7 @@ export function WorkoutSessionPage() {
             sessionId={session.id}
             sets={sets.filter((s) => s.exerciseId === p.exercise.id)}
             last={lastTime(p.exercise.id)}
-            holdWeights={isDeloadWeek(week)}
+            holdWeights={w.deload || w.taper}
             onAdd={addSet}
             onDelete={deleteSet}
             onRemove={session.extraExerciseIds.includes(p.exercise.id) ? () => removeExercise(p.exercise.id) : undefined}
@@ -270,7 +272,7 @@ function ExerciseCard({ planned, sessionId, sets, last, onAdd, onDelete, onRemov
     const v: Values = {}
     for (const f of exercise.fields) {
       if (f === 'kg') v.kg = str(source?.weightKg ?? rx.kg)
-      if (f === 'reps') v.reps = str(rx.reps ?? source?.reps)
+      if (f === 'reps') v.reps = str(rx.repsBySet?.[slot.setNumber - 1] ?? rx.reps ?? source?.reps)
       if (f === 'sec') v.sec = str(rx.seconds ?? source?.durationS)
       if (f === 'cm') v.cm = str(source?.lengthCm)
     }

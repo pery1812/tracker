@@ -9,22 +9,24 @@ import { addDays, formatShortDate, fromDateKey } from '../lib/dates'
 import {
   CUSTOM_SESSION_TITLE,
   DELOAD_NOTE,
+  HOME_WEEK_NOTE,
   KNEE_RULE,
   OTHER_DAYS,
-  PHASES,
   PROGRAM_WEEKS,
+  SEASON_START,
   SESSIONS,
   SESSION_ORDER,
+  TAPER_NOTE,
+  TOURNAMENT_LABEL,
   sessionTitle,
 } from '../lib/program'
 import {
-  isDeloadWeek,
-  isTestWeek,
-  phaseForWeek,
+  blockTitle,
   plannedSessionKey,
   programWeek,
   programWeekRange,
-  programWeekStartOnOrBefore,
+  weekDates,
+  weekInfo,
 } from '../lib/schedule'
 import * as storage from '../lib/storage'
 import type { DateKey, SessionKind, WorkoutSession } from '../lib/types'
@@ -43,7 +45,7 @@ export function WorkoutsPage() {
       <>
         <PageHeader title="Workouts" />
         <StartDateForm
-          initial={settings?.startDate ?? programWeekStartOnOrBefore(today)}
+          initial={settings?.startDate ?? SEASON_START}
           onSave={async (d) => {
             await saveStart(d)
             setEditingStart(false)
@@ -80,7 +82,7 @@ function StartDateForm({
     >
       <h2 className="mb-1 font-semibold">Bulletproof Volleyball Program</h2>
       <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-        When was (or is) the Sunday of week 1? This sets your week, phase, deloads and test days.
+        Block 1 of your season plan starts on Sunday 1 Nov 2026. Change it only if you started on a different Sunday. This sets your block, deloads and test days.
       </p>
       <input
         type="date"
@@ -118,12 +120,18 @@ function WorkoutsOverview({
   const navigate = useNavigate()
   const history = useWorkoutHistory(addDays(today, -7 * 16), today)
   const week = programWeek(startDate, today)
-  const phase = phaseForWeek(week)
-  const planned = plannedSessionKey(today)
+  const w = weekInfo(week)
+  const inSeason = week >= 1 && week <= PROGRAM_WEEKS
+  // Tết week: no gym, so nothing is planned.
+  const planned = inSeason && w.home ? null : plannedSessionKey(today)
+  const blockDates = { start: weekDates(startDate, w.blockStartWeek).start, end: weekDates(startDate, w.blockStartWeek + w.info.weeks - 1).end }
   // Program weeks run Sunday to Saturday (from the start date), not Monday to Sunday.
   const { start: weekStart, end: weekEnd } = programWeekRange(startDate, today)
-  const startsOnSunday = fromDateKey(startDate).getDay() === 0
-  const suggestedStart = programWeekStartOnOrBefore(startDate)
+  const onSeasonStart = startDate === SEASON_START
+  const otherDay =
+    inSeason && w.home
+      ? { title: 'Tết week — home routine only', goal: HOME_WEEK_NOTE }
+      : (OTHER_DAYS[fromDateKey(today).getDay()] ?? { title: 'Rest day', goal: 'Daily joint routine.' })
 
   const sessions = history?.sessions ?? []
   const sets = history?.sets ?? []
@@ -157,18 +165,26 @@ function WorkoutsOverview({
         {week < 1 ? (
           <p className="font-semibold">Program starts {formatShortDate(startDate)}</p>
         ) : week > PROGRAM_WEEKS ? (
-          <p className="font-semibold">Program complete — you’re past week {PROGRAM_WEEKS}. Logging continues with phase 3.</p>
+          <p className="font-semibold">Season complete — you’re past week {PROGRAM_WEEKS}. Logging continues with block 6.</p>
         ) : (
           <>
             <div className="mb-1 flex flex-wrap items-center gap-2">
-              <span className="font-semibold">
-                Phase {phase} · {PHASES[phase].name}
+              <span className="font-semibold">{blockTitle(w)}</span>
+              <span className="text-sm text-slate-500 dark:text-slate-400">
+                week {w.weekInBlock} of {w.info.weeks}
               </span>
-              {isDeloadWeek(week) && <Badge tone="sky">Deload</Badge>}
-              {isTestWeek(week) && <Badge tone="violet">Test week</Badge>}
+              {w.deload && <Badge tone="sky">Deload</Badge>}
+              {w.test && <Badge tone="violet">Test week</Badge>}
+              {w.home && <Badge tone="emerald">Tết · home</Badge>}
+              {w.taper && <Badge tone="emerald">Taper</Badge>}
             </div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{PHASES[phase].goal}</p>
-            {isDeloadWeek(week) && <p className="mt-2 text-sm text-sky-800 dark:text-sky-200">{DELOAD_NOTE}</p>}
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {w.info.focus} · {formatShortDate(blockDates.start)} – {formatShortDate(blockDates.end)}
+            </p>
+            {w.deload && <p className="mt-2 text-sm text-sky-800 dark:text-sky-200">{DELOAD_NOTE}</p>}
+            {w.home && <p className="mt-2 text-sm text-emerald-800 dark:text-emerald-200">{HOME_WEEK_NOTE}</p>}
+            {w.taper && <p className="mt-2 text-sm text-emerald-800 dark:text-emerald-200">{TAPER_NOTE}</p>}
+            <p className="mt-2 text-sm font-medium">{TOURNAMENT_LABEL}</p>
           </>
         )}
         <button type="button" onClick={onEditStart} className="mt-3 text-sm font-medium text-slate-500 underline">
@@ -176,18 +192,15 @@ function WorkoutsOverview({
         </button>
       </section>
 
-      {!startsOnSunday && (
+      {!onSeasonStart && (
         <section className="mb-4 rounded-2xl bg-sky-50 p-4 text-sm text-sky-950 ring-1 ring-sky-200 dark:bg-sky-950 dark:text-sky-50 dark:ring-sky-900">
           <p className="mb-3">
-            Your updated program starts each week on <strong>Sunday</strong>. Week 1 is set to {formatShortDate(startDate)}. Move it to{' '}
-            {formatShortDate(suggestedStart)} so Sundays open each week?
+            Your season plan starts block 1 on <strong>{formatShortDate(SEASON_START)}</strong>, but week 1 is set to{' '}
+            {formatShortDate(startDate)}. Switch to the season dates so your blocks, deloads and the taper line up with the
+            tournament?
           </p>
-          <button
-            type="button"
-            onClick={() => saveStart(suggestedStart)}
-            className="rounded-lg bg-sky-600 px-4 py-2.5 font-semibold text-white"
-          >
-            Use {formatShortDate(suggestedStart)}
+          <button type="button" onClick={() => saveStart(SEASON_START)} className="rounded-lg bg-sky-600 px-4 py-2.5 font-semibold text-white">
+            Use {formatShortDate(SEASON_START)}
           </button>
         </section>
       )}
@@ -226,8 +239,8 @@ function WorkoutsOverview({
           </>
         ) : (
           <>
-            <h2 className="text-xl font-bold">{OTHER_DAYS[fromDateKey(today).getDay()].title}</h2>
-            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">{OTHER_DAYS[fromDateKey(today).getDay()].goal}</p>
+            <h2 className="text-xl font-bold">{otherDay.title}</h2>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">{otherDay.goal}</p>
             <button
               type="button"
               onClick={() => open('custom')}

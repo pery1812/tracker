@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, toDateKey, weekRange } from './dates'
 import { isProgramSession, sessionTitle } from './program'
+import { PROGRAM_WEEKS, SEASON_START } from './program'
 import {
   daysBetween,
   deloadSets,
-  isDeloadWeek,
-  phaseForWeek,
   planSession,
   plannedSessionKey,
   programWeek,
   programWeekRange,
   programWeekStartOnOrBefore,
+  taperSets,
+  weekDates,
+  weekInfo,
 } from './schedule'
 
 describe('dates', () => {
@@ -29,26 +31,47 @@ describe('dates', () => {
   })
 })
 
-describe('program weeks (Sunday to Saturday)', () => {
-  const start = '2026-10-25' // a Sunday
+describe('season calendar (from the PDF)', () => {
+  const start = SEASON_START // Sunday 1 Nov 2026
+  const weekOf = (d: string) => weekInfo(programWeek(start, d))
 
-  it('numbers weeks from the start date', () => {
-    expect(programWeek(start, '2026-10-25')).toBe(1)
-    expect(programWeek(start, '2026-10-31')).toBe(1) // Saturday
-    expect(programWeek(start, '2026-11-01')).toBe(2) // next Sunday
-    expect(programWeek(start, '2026-11-16')).toBe(4)
-    expect(programWeek(start, '2026-10-24')).toBe(0)
+  it('starts on Sunday 1 Nov 2026 and runs 28 weeks to the tournament', () => {
+    expect(start).toBe('2026-11-01')
+    expect(PROGRAM_WEEKS).toBe(28)
+    expect(weekDates(start, 28).end).toBe('2027-05-15') // taper ends the day before ~16 May
   })
-  it('gives the program week range', () => {
+  it('puts each block on the dates in the PDF', () => {
+    const blockStart = (b: number | 'taper') => {
+      for (let wk = 1; wk <= PROGRAM_WEEKS; wk++) if (weekInfo(wk).info.block === b) return weekDates(start, wk).start
+    }
+    expect([1, 2, 3, 4, 5, 6, 'taper'].map((b) => blockStart(b as never))).toEqual([
+      '2026-11-01', '2026-11-29', '2026-12-27', '2027-01-24', '2027-02-28', '2027-03-28', '2027-05-02',
+    ])
+  })
+  it('has deload + test weeks on the PDF dates and nowhere else', () => {
+    const deloads: string[] = []
+    for (let wk = 1; wk <= PROGRAM_WEEKS; wk++) if (weekInfo(wk).deload) deloads.push(weekDates(start, wk).start)
+    expect(deloads).toEqual(['2026-11-22', '2026-12-20', '2027-01-17', '2027-03-21'])
+    expect(weekOf('2026-11-22').test).toBe(true)
+  })
+  it('marks Tết week (7–13 Feb) as home-only, and the taper', () => {
+    expect(weekOf('2027-02-07').home).toBe(true)
+    expect(weekOf('2027-02-13').home).toBe(true)
+    expect(weekOf('2027-02-14').home).toBe(false)
+    expect(weekOf('2027-05-02').taper).toBe(true)
+    expect(weekOf('2027-05-02').block).toBe(6) // taper uses block 6 prescriptions
+  })
+  it('today (Sat 21 Nov) is block 1 week 3; tomorrow is the deload/test Sunday', () => {
+    expect(weekOf('2026-11-21')).toMatchObject({ week: 3, block: 1, weekInBlock: 3, deload: false })
+    expect(weekOf('2026-11-22')).toMatchObject({ week: 4, block: 1, weekInBlock: 4, deload: true })
+  })
+  it('clamps weeks outside the season', () => {
+    expect(weekInfo(0).week).toBe(1)
+    expect(weekInfo(40).week).toBe(28)
+  })
+  it('program weeks run Sunday to Saturday', () => {
     expect(programWeekRange(start, '2026-11-17')).toEqual({ start: '2026-11-15', end: '2026-11-21' })
-  })
-  it('finds the Sunday on or before a date', () => {
-    expect(programWeekStartOnOrBefore('2026-10-26')).toBe('2026-10-25') // Monday -> day before
-    expect(programWeekStartOnOrBefore('2026-11-15')).toBe('2026-11-15') // already Sunday
-    expect(programWeekStartOnOrBefore('2026-11-21')).toBe('2026-11-15') // Saturday
-  })
-  it('maps weeks to phases and clamps outside 1–12', () => {
-    expect([0, 1, 4, 5, 8, 9, 12, 15].map(phaseForWeek)).toEqual([1, 1, 1, 2, 2, 3, 3, 3])
+    expect(programWeekStartOnOrBefore('2026-11-21')).toBe('2026-11-15')
   })
 })
 
@@ -60,78 +83,112 @@ describe('the week', () => {
   })
   it('names current, old-plan and custom sessions', () => {
     expect(sessionTitle('lower')).toBe('Lower A — jumps and strength')
+    expect(sessionTitle('resilience')).toBe('Power and resilience')
     expect(sessionTitle('mon')).toBe('Lower A — strength (old plan)')
     expect(sessionTitle('custom')).toBe('Custom workout')
     expect(isProgramSession('upper')).toBe(true)
     expect(isProgramSession('wed')).toBe(false)
-    expect(isProgramSession('custom')).toBe(false)
   })
 })
 
+// Week numbers used below: 2 = block 1, 6 = block 2, 10 = block 3, 14 = block 4, 19 = block 5,
+// 23 = block 6, 27 = taper; deloads 4, 8, 12, 21.
 describe('Sunday — Lower A', () => {
   const plan = (w: number, scrimmage = false) => planSession('lower', w, { scrimmage })
   const byId = (w: number, id: string, scrimmage = false) => plan(w, scrimmage).find((p) => p.exercise.id === id)
 
-  it('keeps the program sheet letters A–H in every phase', () => {
-    expect(plan(2).map((p) => p.label)).toEqual(['Warm-up', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'])
-    expect(byId(2, 'drop-landing')?.label).toBe('C')
-    expect(byId(6, 'drop-jump')?.label).toBe('C')
-    expect(byId(10, 'depth-jump')?.label).toBe('C')
-    expect(byId(2, 'deadlift')?.label).toBe('D')
-    expect(byId(6, 'overloaded-pull')?.label).toBe('E')
+  it('back squat replaces the deadlift, with the PDF’s sets per block', () => {
+    expect(byId(2, 'deadlift')).toBeUndefined()
+    expect(byId(2, 'back-squat')).toMatchObject({ label: 'D', rx: { sets: 4, reps: 6 } }) // B1 4 × 6–8
+    expect(byId(6, 'back-squat')?.rx).toMatchObject({ sets: 4, reps: 5 }) // B2 4 × 5–6
+    expect(byId(10, 'back-squat')?.rx).toMatchObject({ sets: 6, reps: 3 }) // B3 6 × 3
+    expect(byId(14, 'back-squat')?.rx).toMatchObject({ sets: 5, reps: 3 }) // B4 5 × 3
+    expect(byId(19, 'back-squat')?.rx.repsBySet).toEqual([5, 4, 3, 5]) // B5 5, 4, 3, then 1 × 5
+    expect(byId(23, 'back-squat')?.rx).toMatchObject({ sets: 3, reps: 3 }) // B6 3 × 3
   })
-  it('uses the new RDL 2 × 5 in phase 3', () => {
-    expect(byId(10, 'rdl')?.rx).toMatchObject({ sets: 2, reps: 5 })
+  it('isometric E: wall sit in block 1, pin squat push in blocks 2–5, dropped in block 6', () => {
+    expect(byId(2, 'wall-sit')?.label).toBe('E')
+    expect(byId(6, 'pin-squat-push')?.label).toBe('E')
+    expect(byId(19, 'pin-squat-push')?.rx.sets).toBe(3)
+    expect(plan(23).some((p) => p.label === 'E')).toBe(false)
+  })
+  it('calf raises H change with the block but keep the letter', () => {
+    expect(byId(2, 'sl-calf-raise-db')).toMatchObject({ label: 'H', rx: { sets: 4 } })
+    expect(byId(10, 'calf-raise-2up-1down')?.label).toBe('H')
+    expect(byId(14, 'calf-raise-bouncing-heavy')?.rx.repsBySet).toEqual([6, 6, 8, 8, 8])
+    expect(byId(19, 'calf-raise-slow')?.label).toBe('H')
+  })
+  it('keeps the program sheet letters A–H', () => {
+    expect(plan(2).map((p) => p.label)).toEqual(['Warm-up', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'])
+    expect(byId(6, 'drop-landing')?.label).toBe('C') // block 2 still lands
+    expect(byId(10, 'drop-jump')?.label).toBe('C') // blocks 3–4
+    expect(byId(19, 'depth-jump')?.label).toBe('C')
+  })
+  it('block 4 split squat and RDL are the slow-lowering / drop versions', () => {
+    expect(byId(14, 'split-squat-thp')?.rx.text).toMatch(/Slow-lowering/)
+    expect(byId(14, 'rdl')?.rx).toMatchObject({ sets: 2 })
+  })
+  it('approach jumps go up to 6 × 2 in block 6', () => {
+    expect(byId(19, 'approach-jump')?.rx.sets).toBe(5)
+    expect(byId(23, 'approach-jump')?.rx.sets).toBe(6)
   })
   it('scrimmage: drops A–C and takes one set off D–H', () => {
-    const p = plan(2, true)
-    expect(p.map((x) => x.label)).toEqual(['Warm-up', 'D', 'E', 'F', 'G', 'H'])
-    expect(byId(2, 'deadlift', true)?.rx.sets).toBe(3) // 4 -> 3
-    expect(byId(10, 'rdl', true)?.rx.sets).toBe(1) // 2 -> 1
+    expect(plan(2, true).map((x) => x.label)).toEqual(['Warm-up', 'D', 'E', 'F', 'G', 'H'])
+    expect(byId(2, 'back-squat', true)?.rx.sets).toBe(3)
   })
-  it('deload: fewer sets and no drop jumps; letters unchanged', () => {
-    expect(isDeloadWeek(8)).toBe(true)
+  it('deload: fewer sets, no depth jumps, tests on the Sunday', () => {
     expect(deloadSets(5)).toBe(3)
-    expect(byId(8, 'drop-jump')).toBeUndefined()
-    expect(byId(7, 'drop-jump')?.rx.sets).toBe(3)
-    expect(byId(8, 'deadlift')).toMatchObject({ label: 'D', rx: { sets: 3 } }) // 5 -> 3
+    expect(byId(12, 'drop-jump')).toBeUndefined() // block 3 deload
+    expect(byId(21, 'depth-jump')).toBeUndefined() // block 5 deload
+    expect(byId(4, 'drop-landing')?.rx.sets).toBe(2) // block 1 deload keeps landings, 3 -> 2
+    expect(plan(4).some((p) => p.isTest)).toBe(true)
+    expect(plan(3).some((p) => p.isTest)).toBe(false)
+    expect(planSession('upper', 4).some((p) => p.isTest)).toBe(false)
   })
-  it('has the tests on Sunday of weeks 1, 4, 8 and 12', () => {
-    const hasTests = (w: number) => plan(w).some((p) => p.isTest)
-    expect([1, 2, 4, 8, 9, 12].map(hasTests)).toEqual([true, false, true, true, false, true])
-    expect(planSession('upper', 1).some((p) => p.isTest)).toBe(false)
-  })
-  it('makes pogo hops per-leg only in phase 3', () => {
-    expect(byId(2, 'pogo-hops')?.perSide).toBe(false)
-    expect(byId(10, 'pogo-hops')?.perSide).toBe(true)
+  it('taper: half the sets', () => {
+    expect(taperSets(6)).toBe(3)
+    expect(taperSets(3)).toBe(2)
+    expect(byId(27, 'approach-jump')?.rx.sets).toBe(3) // 6 × 2 -> 3
   })
 })
 
 describe('Monday — Upper + rotation', () => {
-  it('has the new power moves and the finisher, A–M', () => {
+  it('is unchanged: A–J plus an unlettered finisher', () => {
     const p = planSession('upper', 2)
-    expect(p.slice(1, 3).map((x) => x.exercise.id)).toEqual(['landmine-rotational-punch', 'db-snatch'])
-    expect(p.at(-1)).toMatchObject({ label: 'M', exercise: { id: 'upper-triceps' } })
+    expect(p.map((x) => x.label)).toEqual(['Warm-up', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'Finisher', 'Finisher', 'Finisher'])
     expect(p.find((x) => x.exercise.id === 'db-snatch')?.perSide).toBe(true)
   })
 })
 
-describe('Tuesday — resilience', () => {
-  const byId = (w: number, id: string) => planSession('resilience', w).find((p) => p.exercise.id === id)
-  it('starts Nordics at 2 × 3 in weeks 1–2, then 3 × 4', () => {
+describe('Tuesday — Power and resilience', () => {
+  const plan = (w: number) => planSession('resilience', w)
+  const byId = (w: number, id: string) => plan(w).find((p) => p.exercise.id === id)
+  it('block 1: no clean pull yet, so it starts at B (hang power clean)', () => {
+    expect(byId(2, 'clean-pull')).toBeUndefined()
+    expect(byId(2, 'hang-power-clean')).toMatchObject({ label: 'B', rx: { sets: 4, reps: 3 } })
+    expect(byId(6, 'clean-pull')).toMatchObject({ label: 'A', rx: { sets: 4, reps: 3 } })
+  })
+  it('block 6 is a recovery day: clean pull and jump squat dropped', () => {
+    expect(byId(23, 'clean-pull')).toBeUndefined()
+    expect(byId(23, 'barbell-jump-squat')).toBeUndefined()
+    expect(byId(19, 'barbell-jump-squat')?.rx.text).toBe('4 × 3, fast')
+  })
+  it('Nordics: 2 × 3 in weeks 1–2, then 3 × 5; 3 × 6 in block 3', () => {
     expect(byId(1, 'nordic-curl')?.rx).toMatchObject({ sets: 2, reps: 3 })
-    expect(byId(2, 'nordic-curl')?.rx).toMatchObject({ sets: 2, reps: 3 })
-    expect(byId(3, 'nordic-curl')?.rx).toMatchObject({ sets: 3, reps: 4 })
-    expect(byId(6, 'nordic-curl')?.rx).toMatchObject({ sets: 3, reps: 5 })
+    expect(byId(3, 'nordic-curl')?.rx).toMatchObject({ sets: 3, reps: 5 })
+    expect(byId(10, 'nordic-curl')?.rx).toMatchObject({ sets: 3, reps: 6 })
   })
-  it('labels the calf pair I and I2, arm swing J', () => {
-    expect(byId(2, 'seated-calf-raise')?.label).toBe('I')
-    expect(byId(2, 'sl-calf-raise-failure')?.label).toBe('I2')
-    expect(byId(2, 'arm-swing-drill')?.label).toBe('J')
+  it('letters A–I, then the hip flexor, upper finisher and optional groups', () => {
+    const labels = plan(6).map((p) => p.label)
+    expect(labels.slice(0, 10)).toEqual(['Warm-up', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'])
+    expect(labels.filter((l) => l === 'Hip flexors')).toHaveLength(3)
+    expect(labels.filter((l) => l === 'Upper finisher')).toHaveLength(6)
+    expect(labels.at(-1)).toBe('Optional')
   })
-  it('lateral hop: line hop in phase 1, skater bound and stick later', () => {
-    expect(byId(2, 'line-hop-stick')?.label).toBe('A')
-    expect(byId(6, 'skater-bound-stick')?.label).toBe('A')
-    expect(byId(10, 'skater-bound-stick')?.rx.reps).toBe(6)
+  it('dropped exercises are gone from Tuesday', () => {
+    const ids = plan(2).map((p) => p.exercise.id)
+    for (const gone of ['heel-elevated-goblet-squat', 'tibialis-raise-loaded', 'seated-calf-raise', 'arm-swing-drill', 'backward-running']) {
+      expect(ids).not.toContain(gone)
+    }
   })
 })
