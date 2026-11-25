@@ -1,5 +1,5 @@
 /** Looking up exercises across the program and your own custom ones. Pure functions. */
-import { RETIRED_EXERCISES, SESSIONS, SESSION_ORDER, programExercises, type Exercise } from './program'
+import { RETIRED_EXERCISES, SESSIONS, SESSION_ORDER, TESTS, programExercises, type Exercise } from './program'
 import { weekInfo, type PlannedExercise } from './schedule'
 import type { Field } from './types'
 
@@ -45,7 +45,7 @@ export interface PickerGroup {
 
 /**
  * Exercises you can add to a session, grouped: your own first, then each program day.
- * Warm-ups, tests and anything already in the session are left out.
+ * Warm-ups and anything already in the session are left out; tests have their own group.
  */
 export function pickerGroups(custom: Exercise[], excludeIds: Set<string>, query: string): PickerGroup[] {
   const keep = (e: Exercise) => !excludeIds.has(e.id) && matchesQuery(e, query)
@@ -55,6 +55,7 @@ export function pickerGroups(custom: Exercise[], excludeIds: Set<string>, query:
       title: `Program · ${SESSIONS[k].title}`,
       exercises: SESSIONS[k].items.map((i) => i.exercise).filter((e) => !e.warmup).filter(keep),
     })),
+    { title: 'Tests', exercises: TESTS.filter(keep) },
     { title: 'Previous plan', exercises: RETIRED_EXERCISES.filter((e) => !e.warmup).filter(keep) },
   ]
   return groups.filter((g) => g.exercises.length > 0)

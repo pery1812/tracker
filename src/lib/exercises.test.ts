@@ -27,13 +27,14 @@ describe('exercise lookup and search', () => {
 })
 
 describe('picker groups', () => {
-  it('lists your exercises first, then program days, without warm-ups or tests', () => {
+  it('lists your exercises first, then program days, tests and the previous plan, without warm-ups', () => {
     const groups = pickerGroups([swim, hipThrust], new Set(), '')
     expect(groups[0]).toEqual({ title: 'Your exercises', exercises: [hipThrust, swim] })
+    expect(groups.map((g) => g.title).slice(-2)).toEqual(['Tests', 'Previous plan'])
     const all = groups.flatMap((g) => g.exercises.map((e) => e.id))
     expect(all).toContain('deadlift')
+    expect(all).toContain('test-standing-vertical')
     expect(all).not.toContain('joint-routine')
-    expect(all.some((x) => x.startsWith('test-'))).toBe(false)
   })
   it('leaves out exercises already in the session and filters by search', () => {
     const groups = pickerGroups([swim], new Set(['deadlift', 'custom-1']), 'dead')

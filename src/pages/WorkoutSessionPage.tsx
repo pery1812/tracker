@@ -8,7 +8,7 @@ import { useCustomExercises, useProgramSettings, useWorkoutHistory, useWorkoutSe
 import { addDays, formatShortDate } from '../lib/dates'
 import { makeExerciseLookup, plannedExtra } from '../lib/exercises'
 import { DELOAD_NOTE, FIELD_UNITS, SCRIMMAGE_NOTE, SESSIONS, TAPER_NOTE, isProgramSession, sessionTitle, type Field } from '../lib/program'
-import { blockTitle, planSession, programWeek, weekInfo, type PlannedExercise } from '../lib/schedule'
+import { blockTitle, planSession, programWeek, weekInfo, weekLabel, type PlannedExercise } from '../lib/schedule'
 import { describeSets, formatSet, suggestIncrease } from '../lib/stats'
 import type { DateKey, Side, WorkoutSet, WorkoutSetInput } from '../lib/types'
 
@@ -81,7 +81,7 @@ export function WorkoutSessionPage() {
       </Link>
       <header className="mb-4">
         <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-          {formatShortDate(session.date)} · Week {week} · {blockTitle(w)}
+          {formatShortDate(session.date)} · {week >= 1 ? `Week ${week} · ${blockTitle(w)}` : weekLabel(week)}
         </p>
         <h1 className="text-3xl font-bold tracking-tight">{sessionTitle(kind)}</h1>
         <div className="mt-2 flex flex-wrap gap-2">

@@ -1,6 +1,7 @@
 /**
- * The "Bulletproof Volleyball Program" (version 3, season plan): six 4-week blocks and a two-week
- * taper from Sunday 1 Nov 2026 to the tournament around 16 May 2027. Three gym days: Sunday lower,
+ * The "Bulletproof Volleyball Program" (version 4, season plan): baseline tests on Sat 21 Nov 2026,
+ * then five 4-week blocks, a 3-week peak block and a two-week taper from Sunday 22 Nov 2026 to the
+ * tournament around 16 May 2027. Three gym days: Sunday lower,
  * Monday upper, Tuesday power and resilience, around volleyball and football.
  *
  * This is static plan content, not user data, so it lives in code rather than the database.
@@ -90,8 +91,10 @@ export interface SessionPlan {
 // The season
 // =====================================================================================
 
-/** Sunday of week 1 (block 1 starts 1 Nov 2026). The app's start-date setting defaults to this. */
-export const SEASON_START: DateKey = '2026-11-01'
+/** Sunday of week 1 (block 1 starts 22 Nov 2026). The app's start-date setting defaults to this. */
+export const SEASON_START: DateKey = '2026-11-22'
+/** Baseline tests, the day before week 1: all tests, no session. */
+export const BASELINE_DATE: DateKey = '2026-11-21'
 export const TOURNAMENT_LABEL = 'Tournament around 16 May 2027'
 /** Program weeks start on Sunday (the first gym day). */
 export const PROGRAM_WEEK_STARTS_ON = 0
@@ -114,14 +117,14 @@ export interface BlockInfo {
 export const SEASON: BlockInfo[] = [
   { block: 1, name: 'Volume', focus: 'Higher reps, technique, ATG knee and ankle work, learn the hang clean', weeks: 4, deloadWeek: 4 },
   { block: 2, name: 'Intensify', focus: 'Clean pulls and hang cleans, squats in sets of 5–6, contrast jumps', weeks: 4, deloadWeek: 4 },
-  { block: 3, name: 'Strength', focus: 'Heaviest squats (sets of 3), heavy clean pulls, eccentric accessories', weeks: 4, deloadWeek: 4 },
-  { block: 4, name: 'Power', focus: 'Heavy hang cleans, slow-lowering split squats, elastic accessories', weeks: 5, homeWeek: 3 },
+  { block: 3, name: 'Strength', focus: 'Heaviest squats (sets of 3), heavy clean pulls, eccentric accessories', weeks: 4, homeWeek: 4 },
+  { block: 4, name: 'Power', focus: 'Heavy hang cleans, slow-lowering split squats, elastic accessories', weeks: 4, deloadWeek: 4 },
   { block: 5, name: 'Speed', focus: 'Light fast cleans, fast squats, more depth jumps, low plyos', weeks: 4, deloadWeek: 4 },
-  { block: 6, name: 'Peak', focus: 'Most approach and depth jumps, lighter lifting, easy Tuesdays', weeks: 5 },
+  { block: 6, name: 'Peak', focus: 'Most approach and depth jumps, lighter lifting, easy Tuesdays', weeks: 3 },
   { block: 'taper', name: 'Taper', focus: 'Volume cut by half, max-effort jumps only, stay fresh', weeks: 2 },
 ]
 
-export const PROGRAM_WEEKS = SEASON.reduce((n, b) => n + b.weeks, 0) // 28
+export const PROGRAM_WEEKS = SEASON.reduce((n, b) => n + b.weeks, 0) // 25
 
 export const DELOAD_NOTE = 'Deload week: about 40% fewer sets, same weights, no depth jumps. Test on Sunday.'
 export const HOME_WEEK_NOTE = 'Tết week: no gym, home routine only (the daily joint routine).'

@@ -187,3 +187,9 @@ export { PROGRAM_WEEKS }
 export function blockTitle(w: WeekInfo): string {
   return w.taper ? 'Taper' : `Block ${w.block} · ${w.info.name}`
 }
+
+/** "Week 3", or "Baseline week" for the week before week 1, or "Pre-season" before that. */
+export function weekLabel(week: number): string {
+  if (week >= 1) return `Week ${week}`
+  return week === 0 ? 'Baseline week' : 'Pre-season'
+}

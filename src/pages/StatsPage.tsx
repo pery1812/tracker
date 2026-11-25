@@ -257,6 +257,14 @@ function bestFor(exercise: Exercise, sets: WorkoutSet[], side: 'left' | 'right' 
   return `${best}${FIELD_UNITS[exercise.fields[0]] === '/10' ? '/10' : ''}`
 }
 
+/** "Wk 4", "Baseline" for the week before week 1, or the date. */
+function testColumnLabel(startDate: DateKey | undefined, date: DateKey): string {
+  if (!startDate) return formatShortDate(date)
+  const week = programWeek(startDate, date)
+  if (week >= 1) return `Wk ${week}`
+  return week === 0 ? 'Baseline' : formatShortDate(date)
+}
+
 function TestResults({ sessions, sets, startDate }: { sessions: WorkoutSession[]; sets: WorkoutSet[]; startDate?: DateKey }) {
   const testIds = new Set(TESTS.map((t) => t.id))
   const testSessions = sessions.filter((s) => sets.some((x) => x.sessionId === s.id && testIds.has(x.exerciseId)))
@@ -278,7 +286,7 @@ function TestResults({ sessions, sets, startDate }: { sessions: WorkoutSession[]
               <th className="w-full min-w-28 py-1 pr-3 font-medium">Test</th>
               {testSessions.map((s) => (
                 <th key={s.id} className="py-1 pr-3 font-medium whitespace-nowrap">
-                  {startDate ? `Wk ${programWeek(startDate, s.date)}` : formatShortDate(s.date)}
+                  {testColumnLabel(startDate, s.date)}
                 </th>
               ))}
             </tr>

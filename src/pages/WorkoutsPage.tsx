@@ -27,6 +27,7 @@ import {
   programWeekRange,
   weekDates,
   weekInfo,
+  weekLabel,
 } from '../lib/schedule'
 import * as storage from '../lib/storage'
 import type { DateKey, SessionKind, WorkoutSession } from '../lib/types'
@@ -163,7 +164,7 @@ function WorkoutsOverview({
 
       <section className={`${card} mb-4`}>
         {week < 1 ? (
-          <p className="font-semibold">Program starts {formatShortDate(startDate)}</p>
+          <p className="font-semibold">Week 1 starts {formatShortDate(startDate)} · baseline tests the day before</p>
         ) : week > PROGRAM_WEEKS ? (
           <p className="font-semibold">Season complete — you’re past week {PROGRAM_WEEKS}. Logging continues with block 6.</p>
         ) : (
@@ -317,7 +318,7 @@ function WorkoutsOverview({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{sessionTitle(s.sessionKind)}</span>
                   <span className="block text-sm text-slate-500 dark:text-slate-400">
-                    {formatShortDate(s.date)} · Week {programWeek(startDate, s.date)} · {setCount(s.id)} sets
+                    {formatShortDate(s.date)} · {weekLabel(programWeek(startDate, s.date))} · {setCount(s.id)} sets
                   </span>
                 </span>
                 {s.kneePain != null && (

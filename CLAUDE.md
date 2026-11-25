@@ -64,7 +64,7 @@ src/
     types.ts            Habit, Completion, WorkoutSession, WorkoutSet, ... (app-side camelCase types)
     dates.ts            local date-key helpers (toDateKey, weekRange, ...)
     colors.ts           habit colour palette
-    program.ts          the Bulletproof Volleyball season plan (v3) as data: SEASON blocks, exercise library, 3 sessions, tests, retired exercises
+    program.ts          the Bulletproof Volleyball season plan (v4) as data: SEASON blocks, exercise library, 3 sessions, tests, retired exercises
     schedule.ts         program week -> weekInfo (block, deload/test, Tết, taper), planSession() — pure
     exercises.ts        lookup across program + your own exercises, picker groups, plannedExtra() — pure
     stats.ts            streaks, completion rates, set summaries, progress series — pure
@@ -106,11 +106,12 @@ src/
 ### Workouts
 
 - The training program is **static content in `src/lib/program.ts`**, not database rows. The database
-  only stores what was actually done. Source: the user's "Bulletproof Volleyball Program" PDF, **version 3**
-  (season plan): `SEASON` = six blocks (4, 4, 4, 5, 4, 5 weeks) + 2-week taper = 28 weeks from
-  `SEASON_START` Sun 1 Nov 2026 to the tournament ~16 May 2027. Deload + test Sundays end blocks 1, 2, 3
-  and 5; block 4 week 3 is Tết (home routine only, nothing planned); block 6 has no deload; the taper
-  uses block 6 prescriptions at half the sets. Gym **Sun** `lower`, **Mon** `upper`, **Tue** `resilience`
+  only stores what was actually done. Source: the user's "Bulletproof Volleyball Program" PDF, **version 4**
+  (season plan): baseline tests Sat 21 Nov 2026 (`BASELINE_DATE`, program week 0, "Baseline week"), then
+  `SEASON` = blocks of 4, 4, 4, 4, 4, 3 weeks + 2-week taper = 25 weeks from `SEASON_START` Sun 22 Nov 2026
+  to the tournament ~16 May 2027. Deload + test Sundays end blocks 1, 2, 4 and 5; block 3's last week
+  is Tết (7–13 Feb, home routine only, nothing planned); block 6 has no deload; the taper uses block 6
+  prescriptions at half the sets. Tests are also in the exercise picker (e.g. to log baseline results). Gym **Sun** `lower`, **Mon** `upper`, **Tue** `resilience`
   ("Power and resilience"); Wed volleyball technique, Thu football, Fri volleyball, Sat rest. Knee
   rule 3/10. Units are **kg**. If the tournament date moves, change block 6's `weeks` in `SEASON`.
 - Prescriptions are **per block** (`Rx` keyed 1–6). `cols(b12, b34, b56)` mirrors the PDF's three
